@@ -81,6 +81,14 @@ function Earth({ preset }: { preset: CameraPresetId }) {
       <sphereGeometry args={[2.25, 160, 160]} />
       <meshPhongMaterial map={day} color="#f4f8fb" emissiveMap={night} emissive={new THREE.Color('#8eb8dc')} emissiveIntensity={0.32} normalMap={normal} normalScale={new THREE.Vector2(0.36, 0.36)} specularMap={specular} specular={new THREE.Color('#a7d8ee')} shininess={16} />
     </mesh>
+    <mesh>
+      <sphereGeometry args={[2.253, 160, 160]} />
+      <meshBasicMaterial map={day} transparent opacity={0.56} depthWrite={false} />
+    </mesh>
+    <mesh>
+      <sphereGeometry args={[2.257, 160, 160]} />
+      <meshBasicMaterial color="#287bb9" transparent opacity={0.18} depthWrite={false} />
+    </mesh>
     <mesh ref={clouds}>
       <sphereGeometry args={[2.286, 160, 160]} />
       <meshPhongMaterial map={cloud} transparent opacity={0.22} depthWrite={false} color="#e4f1f8" specular="#ffffff" shininess={22} />
