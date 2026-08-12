@@ -15,6 +15,8 @@ const CLOUD_MAP = `${import.meta.env.BASE_URL}assets/earth-clouds-real.jpg`
 const MOON_MAP = `${import.meta.env.BASE_URL}assets/moon.jpg`
 const SUN_MAP = `${import.meta.env.BASE_URL}assets/sun-real.jpg`
 const STAR_MAP = `${import.meta.env.BASE_URL}assets/stars-milky-way.jpg`
+const SUN_POSITION = new THREE.Vector3(30, 16, 20)
+const MOON_POSITION: [number, number, number] = [-14, 4, -8]
 
 function useTexture(url: string) {
   return useMemo(() => {
@@ -56,17 +58,17 @@ function Moon() {
   const moon = useRef<THREE.Mesh>(null)
   const map = useTexture(MOON_MAP)
   useFrame((_, delta) => { if (moon.current) moon.current.rotation.y += delta * 0.01 })
-  return <mesh ref={moon} position={[-5.6, 1.75, -3.2]}><sphereGeometry args={[0.6, 64, 64]} /><meshStandardMaterial map={map} roughness={1} /></mesh>
+  return <mesh ref={moon} position={MOON_POSITION}><sphereGeometry args={[0.58, 64, 64]} /><meshStandardMaterial map={map} roughness={1} /></mesh>
 }
 
 function Sun() {
   const glow = useRef<THREE.Mesh>(null)
   const map = useTexture(SUN_MAP)
   useFrame((_, delta) => { if (glow.current) glow.current.scale.setScalar(1 + Math.sin(performance.now() * 0.001) * 0.025 + delta * 0) })
-  return <group position={[3, 4, 8]}>
-    <pointLight color="#fff0c4" intensity={100} distance={0} />
-    <mesh><sphereGeometry args={[1.1, 64, 64]} /><meshBasicMaterial map={map} color="#fff8dc" /></mesh>
-    <mesh ref={glow}><sphereGeometry args={[1.28, 64, 64]} /><meshBasicMaterial color="#ff9a32" transparent opacity={0.09} blending={THREE.AdditiveBlending} depthWrite={false} /></mesh>
+  return <group position={SUN_POSITION}>
+    <pointLight color="#fff0c4" intensity={560} distance={0} />
+    <mesh><sphereGeometry args={[3.4, 64, 64]} /><meshBasicMaterial map={map} color="#fff8dc" /></mesh>
+    <mesh ref={glow}><sphereGeometry args={[3.8, 64, 64]} /><meshBasicMaterial color="#ff9a32" transparent opacity={0.075} blending={THREE.AdditiveBlending} depthWrite={false} /></mesh>
   </group>
 }
 
@@ -80,8 +82,8 @@ function DeepSpace() {
 
 const labels = [
   { position: [-1.9, -1.9, 0.7] as [number, number, number], title: '昼夜分界线', sub: 'Terminator line' },
-  { position: [-5.6, 2.65, -3.2] as [number, number, number], title: '月球', sub: 'The Moon' },
-  { position: [3.5, 4.7, 6.8] as [number, number, number], title: '太阳光照', sub: 'Solar illumination' },
+  { position: [-14, 4.9, -8] as [number, number, number], title: '月球', sub: 'The Moon · 7× Earth radius' },
+  { position: [30, 20.2, 20] as [number, number, number], title: '太阳', sub: 'Sun · 17× Earth radius' },
 ]
 
 function Annotations({ visible }: { visible: boolean }) {
@@ -120,7 +122,7 @@ export function Scene({ annotations }: Props) {
   return <>
     <color attach="background" args={['#02050c']} />
     <ambientLight intensity={0.035} />
-    <directionalLight position={[3, 4, 8]} intensity={1.65} color="#fff3d0" />
+    <directionalLight position={SUN_POSITION} intensity={1.65} color="#fff3d0" />
     <DeepSpace />
     <XRMovement />
     <Annotations visible={annotations} />
