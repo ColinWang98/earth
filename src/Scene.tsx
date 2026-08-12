@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef } from 'react'
 import * as THREE from 'three'
-import { OrbitControls, Stars, Text } from '@react-three/drei'
+import { OrbitControls, Text } from '@react-three/drei'
 import { useFrame, useThree } from '@react-three/fiber'
 
 type Props = {
@@ -14,6 +14,7 @@ const SPECULAR_MAP = `${import.meta.env.BASE_URL}assets/earth-specular.jpg`
 const CLOUD_MAP = `${import.meta.env.BASE_URL}assets/earth-clouds-real.jpg`
 const MOON_MAP = `${import.meta.env.BASE_URL}assets/moon.jpg`
 const SUN_MAP = `${import.meta.env.BASE_URL}assets/sun-real.jpg`
+const STAR_MAP = `${import.meta.env.BASE_URL}assets/stars-milky-way.jpg`
 
 function useTexture(url: string) {
   return useMemo(() => {
@@ -69,6 +70,14 @@ function Sun() {
   </group>
 }
 
+function DeepSpace() {
+  const map = useTexture(STAR_MAP)
+  return <mesh>
+    <sphereGeometry args={[180, 64, 40]} />
+    <meshBasicMaterial map={map} side={THREE.BackSide} toneMapped={false} />
+  </mesh>
+}
+
 const labels = [
   { position: [-1.9, -1.9, 0.7] as [number, number, number], title: '昼夜分界线', sub: 'Terminator line' },
   { position: [-5.6, 2.65, -3.2] as [number, number, number], title: '月球', sub: 'The Moon' },
@@ -103,7 +112,7 @@ function XRMovement() {
     const { theta, phi, distance } = orbit.current
     world.current.position.set(-Math.sin(theta) * Math.cos(phi) * distance, -Math.sin(phi) * distance + 0.25, -Math.cos(theta) * Math.cos(phi) * distance)
   })
-  return <group ref={world}><Earth /><Moon /><Sun /><Stars radius={120} depth={50} count={3300} factor={2.3} saturation={0.25} fade speed={0.1} /></group>
+  return <group ref={world}><Earth /><Moon /><Sun /></group>
 }
 
 export function Scene({ annotations }: Props) {
@@ -112,6 +121,7 @@ export function Scene({ annotations }: Props) {
     <color attach="background" args={['#02050c']} />
     <ambientLight intensity={0.035} />
     <directionalLight position={[3, 4, 8]} intensity={1.65} color="#fff3d0" />
+    <DeepSpace />
     <XRMovement />
     <Annotations visible={annotations} />
     <OrbitControls enableDamping dampingFactor={0.06} minDistance={4.6} maxDistance={15} target={[0, 0, 0]} />
