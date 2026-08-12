@@ -13,9 +13,8 @@ const NORMAL_MAP = `${import.meta.env.BASE_URL}assets/earth-normal.jpg`
 const SPECULAR_MAP = `${import.meta.env.BASE_URL}assets/earth-specular.jpg`
 const CLOUD_MAP = `${import.meta.env.BASE_URL}assets/earth-clouds-real.jpg`
 const MOON_MAP = `${import.meta.env.BASE_URL}assets/moon.jpg`
-const SUN_MAP = `${import.meta.env.BASE_URL}assets/sun-real.jpg`
-const STAR_MAP = `${import.meta.env.BASE_URL}assets/milky-way-mellinger.jpg`
-const SUN_POSITION = new THREE.Vector3(1.6, 0.4, 5)
+const STAR_MAP = `${import.meta.env.BASE_URL}assets/nasa-wise-all-sky.jpg`
+const LIGHT_POSITION = new THREE.Vector3(18, 10, 16)
 const MOON_POSITION: [number, number, number] = [-22, 8, -16]
 
 function useTexture(url: string) {
@@ -61,28 +60,17 @@ function Moon() {
   return <mesh ref={moon} position={MOON_POSITION}><sphereGeometry args={[0.58, 64, 64]} /><meshStandardMaterial map={map} roughness={1} /></mesh>
 }
 
-function Sun() {
-  const glow = useRef<THREE.Mesh>(null)
-  const map = useTexture(SUN_MAP)
-  useFrame((_, delta) => { if (glow.current) glow.current.scale.setScalar(1 + Math.sin(performance.now() * 0.001) * 0.025 + delta * 0) })
-  return <group position={SUN_POSITION}>
-    <mesh><sphereGeometry args={[0.18, 48, 48]} /><meshBasicMaterial map={map} color="#fff8dc" /></mesh>
-    <mesh ref={glow}><sphereGeometry args={[0.25, 48, 48]} /><meshBasicMaterial color="#ffae4f" transparent opacity={0.05} blending={THREE.AdditiveBlending} depthWrite={false} /></mesh>
-  </group>
-}
-
 function DeepSpace() {
   const map = useTexture(STAR_MAP)
   return <mesh>
     <sphereGeometry args={[180, 64, 40]} />
-    <meshBasicMaterial map={map} color="#34404f" side={THREE.BackSide} toneMapped={false} />
+    <meshBasicMaterial map={map} color="#27313d" side={THREE.BackSide} toneMapped={false} />
   </mesh>
 }
 
 const labels = [
   { position: [-1.9, -1.9, 0.7] as [number, number, number], title: '昼夜分界线', sub: 'Terminator line' },
   { position: [-22, 8.9, -16] as [number, number, number], title: '月球', sub: 'Moon · enlarged view' },
-  { position: [1.6, 0.8, 5] as [number, number, number], title: '太阳', sub: 'Sun · 2.4° display size' },
 ]
 
 function Annotations({ visible }: { visible: boolean }) {
@@ -113,7 +101,7 @@ function XRMovement() {
     const { theta, phi, distance } = orbit.current
     world.current.position.set(-Math.sin(theta) * Math.cos(phi) * distance, -Math.sin(phi) * distance + 0.25, -Math.cos(theta) * Math.cos(phi) * distance)
   })
-  return <group ref={world}><Earth /><Moon /><Sun /></group>
+  return <group ref={world}><Earth /><Moon /></group>
 }
 
 export function Scene({ annotations }: Props) {
@@ -121,7 +109,7 @@ export function Scene({ annotations }: Props) {
   return <>
     <color attach="background" args={['#02050c']} />
     <ambientLight intensity={0.035} />
-    <directionalLight position={SUN_POSITION} intensity={1.65} color="#fff3d0" />
+    <directionalLight position={LIGHT_POSITION} intensity={1.65} color="#fff3d0" />
     <DeepSpace />
     <XRMovement />
     <Annotations visible={annotations} />
