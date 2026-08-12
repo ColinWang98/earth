@@ -47,25 +47,8 @@ function Earth() {
         <sphereGeometry args={[2.29, 72, 72]} />
         <meshPhongMaterial map={cloud} transparent opacity={0.32} depthWrite={false} color="#d8e5ee" />
       </mesh>
-      <Atmosphere />
     </group>
   )
-}
-
-function Atmosphere() {
-  const material = useMemo(() => new THREE.ShaderMaterial({
-    side: THREE.BackSide,
-    transparent: true,
-    blending: THREE.AdditiveBlending,
-    depthWrite: false,
-    uniforms: {
-      glowColor: { value: new THREE.Color('#79caff') },
-      sunDirection: { value: new THREE.Vector3(3, 4, 8).normalize() },
-    },
-    vertexShader: `varying vec3 vWorldNormal; varying vec3 vWorldPosition; void main() { vWorldNormal = normalize(mat3(modelMatrix) * normal); vWorldPosition = (modelMatrix * vec4(position, 1.0)).xyz; gl_Position = projectionMatrix * viewMatrix * vec4(vWorldPosition, 1.0); }`,
-    fragmentShader: `uniform vec3 glowColor; uniform vec3 sunDirection; varying vec3 vWorldNormal; varying vec3 vWorldPosition; void main() { vec3 normal = normalize(vWorldNormal); vec3 viewDirection = normalize(cameraPosition - vWorldPosition); float rim = pow(1.0 - max(dot(normal, viewDirection), 0.0), 5.4); float sunlight = pow(max(dot(normal, sunDirection), 0.0), 0.45); float alpha = rim * sunlight * 0.48; gl_FragColor = vec4(glowColor * alpha, alpha); }`,
-  }), [])
-  return <mesh material={material}><sphereGeometry args={[2.29, 96, 96]} /></mesh>
 }
 
 function Moon() {
@@ -87,7 +70,6 @@ function Sun() {
 }
 
 const labels = [
-  { position: [2.7, 0.8, 0] as [number, number, number], title: '大气层', sub: 'Atmospheric glow' },
   { position: [-1.9, -1.9, 0.7] as [number, number, number], title: '昼夜分界线', sub: 'Terminator line' },
   { position: [-5.6, 2.65, -3.2] as [number, number, number], title: '月球', sub: 'The Moon' },
   { position: [3.5, 4.7, 6.8] as [number, number, number], title: '太阳光照', sub: 'Solar illumination' },
