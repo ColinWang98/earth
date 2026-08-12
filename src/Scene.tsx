@@ -24,7 +24,7 @@ const DAY_MAP = `${import.meta.env.BASE_URL}assets/earth-blue-marble-5k.jpg`
 const NIGHT_MAP = `${import.meta.env.BASE_URL}assets/earth-night.png`
 const NORMAL_MAP = `${import.meta.env.BASE_URL}assets/earth-normal.jpg`
 const SPECULAR_MAP = `${import.meta.env.BASE_URL}assets/earth-specular.jpg`
-const CLOUD_MAP = `${import.meta.env.BASE_URL}assets/earth-clouds-8k.jpg`
+const CLOUD_MAP = `${import.meta.env.BASE_URL}assets/earth-clouds-real.jpg`
 const MOON_MAP = `${import.meta.env.BASE_URL}assets/moon.jpg`
 const LIGHT_POSITION = new THREE.Vector3(3, 4, 30)
 const MOON_POSITION: [number, number, number] = [-22, 8, -16]
@@ -64,7 +64,6 @@ function Atmosphere() {
 function Earth({ preset }: { preset: CameraPresetId }) {
   const earth = useRef<THREE.Group>(null)
   const clouds = useRef<THREE.Mesh>(null)
-  const highClouds = useRef<THREE.Mesh>(null)
   const day = useTexture(DAY_MAP)
   const night = useTexture(NIGHT_MAP)
   const normal = useTexture(NORMAL_MAP)
@@ -75,7 +74,6 @@ function Earth({ preset }: { preset: CameraPresetId }) {
   useFrame((_, delta) => {
     if (earth.current) earth.current.rotation.y = THREE.MathUtils.damp(earth.current.rotation.y, targetRotation, 2.7, delta)
     if (clouds.current) clouds.current.rotation.y += delta * 0.007
-    if (highClouds.current) highClouds.current.rotation.y += delta * 0.011
   })
 
   return <group ref={earth}>
@@ -85,11 +83,7 @@ function Earth({ preset }: { preset: CameraPresetId }) {
     </mesh>
     <mesh ref={clouds}>
       <sphereGeometry args={[2.286, 160, 160]} />
-      <meshPhongMaterial alphaMap={cloud} alphaTest={0.45} transparent opacity={0.16} depthWrite={false} color="#f4fbff" specular="#ffffff" shininess={28} />
-    </mesh>
-    <mesh ref={highClouds} rotation={[0.015, 0.18, 0]}>
-      <sphereGeometry args={[2.306, 128, 128]} />
-      <meshPhongMaterial alphaMap={cloud} alphaTest={0.62} transparent opacity={0.035} depthWrite={false} color="#cbe6ff" />
+      <meshPhongMaterial map={cloud} transparent opacity={0.22} depthWrite={false} color="#e4f1f8" specular="#ffffff" shininess={22} />
     </mesh>
     <Atmosphere />
   </group>
