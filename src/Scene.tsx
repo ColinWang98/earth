@@ -7,14 +7,14 @@ type Props = {
   annotations: boolean
 }
 
-const DAY_MAP = `${import.meta.env.BASE_URL}assets/earth-day-real.jpg`
+const DAY_MAP = `${import.meta.env.BASE_URL}assets/earth-blue-marble-5k.jpg`
 const NIGHT_MAP = `${import.meta.env.BASE_URL}assets/earth-night.png`
 const NORMAL_MAP = `${import.meta.env.BASE_URL}assets/earth-normal.jpg`
 const SPECULAR_MAP = `${import.meta.env.BASE_URL}assets/earth-specular.jpg`
 const CLOUD_MAP = `${import.meta.env.BASE_URL}assets/earth-clouds-real.jpg`
 const MOON_MAP = `${import.meta.env.BASE_URL}assets/moon.jpg`
 const STAR_MAP = `${import.meta.env.BASE_URL}assets/nasa-wise-all-sky.jpg`
-const LIGHT_POSITION = new THREE.Vector3(18, 10, 16)
+const LIGHT_POSITION = new THREE.Vector3(3, 4, 30)
 const MOON_POSITION: [number, number, number] = [-22, 8, -16]
 
 function useTexture(url: string) {
@@ -42,12 +42,20 @@ function Earth() {
   return (
     <group ref={earth}>
       <mesh castShadow receiveShadow>
-        <sphereGeometry args={[2.25, 96, 96]} />
-        <meshPhongMaterial map={day} emissiveMap={night} emissive={new THREE.Color('#cfe9ff')} emissiveIntensity={0.16} normalMap={normal} normalScale={new THREE.Vector2(0.62, 0.62)} specularMap={specular} specular={new THREE.Color('#4f7d91')} shininess={8} />
+        <sphereGeometry args={[2.25, 128, 128]} />
+        <meshPhongMaterial map={day} color="#f7fbff" emissiveMap={night} emissive={new THREE.Color('#d9edff')} emissiveIntensity={0.24} normalMap={normal} normalScale={new THREE.Vector2(0.48, 0.48)} specularMap={specular} specular={new THREE.Color('#81b5cf')} shininess={12} />
+      </mesh>
+      <mesh>
+        <sphereGeometry args={[2.253, 128, 128]} />
+        <meshBasicMaterial map={day} transparent opacity={0.72} depthWrite={false} />
+      </mesh>
+      <mesh>
+        <sphereGeometry args={[2.256, 128, 128]} />
+        <meshBasicMaterial color="#2f78b5" transparent opacity={0.24} depthWrite={false} />
       </mesh>
       <mesh ref={clouds}>
         <sphereGeometry args={[2.29, 72, 72]} />
-        <meshPhongMaterial map={cloud} transparent opacity={0.32} depthWrite={false} color="#d8e5ee" />
+        <meshPhongMaterial map={cloud} transparent opacity={0.24} depthWrite={false} color="#e4f1f8" />
       </mesh>
     </group>
   )
@@ -96,7 +104,7 @@ function XRMovement() {
         orbit.current.theta -= axes[2] * delta * 1.1
         orbit.current.phi = THREE.MathUtils.clamp(orbit.current.phi + axes[3] * delta * 0.65, -0.45, 0.55)
       }
-      if (source.handedness === 'right') orbit.current.distance = THREE.MathUtils.clamp(orbit.current.distance + axes[3] * delta * 2.1, 4.6, 15)
+      if (source.handedness === 'right') orbit.current.distance = THREE.MathUtils.clamp(orbit.current.distance + axes[3] * delta * 2.1, 2.7, 15)
     }
     const { theta, phi, distance } = orbit.current
     world.current.position.set(-Math.sin(theta) * Math.cos(phi) * distance, -Math.sin(phi) * distance + 0.25, -Math.cos(theta) * Math.cos(phi) * distance)
@@ -108,11 +116,11 @@ export function Scene({ annotations }: Props) {
   useEffect(() => { document.title = 'Earth Observation / 自由太空观察' }, [])
   return <>
     <color attach="background" args={['#02050c']} />
-    <ambientLight intensity={0.035} />
-    <directionalLight position={LIGHT_POSITION} intensity={1.65} color="#fff3d0" />
+    <ambientLight intensity={0.4} color="#d3e8fa" />
+    <directionalLight position={LIGHT_POSITION} intensity={2.2} color="#fff7df" />
     <DeepSpace />
     <XRMovement />
     <Annotations visible={annotations} />
-    <OrbitControls enableDamping dampingFactor={0.06} minDistance={4.6} maxDistance={15} target={[0, 0, 0]} />
+    <OrbitControls enableDamping dampingFactor={0.06} minDistance={2.7} maxDistance={15} target={[0, 0, 0]} />
   </>
 }
