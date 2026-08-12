@@ -41,11 +41,11 @@ function Earth() {
     <group ref={earth}>
       <mesh castShadow receiveShadow>
         <sphereGeometry args={[2.25, 96, 96]} />
-        <meshPhongMaterial map={day} emissiveMap={night} emissive={new THREE.Color('#31507b')} emissiveIntensity={0.85} normalMap={normal} normalScale={new THREE.Vector2(0.7, 0.7)} specularMap={specular} specular={new THREE.Color('#365b74')} shininess={16} />
+        <meshPhongMaterial map={day} emissiveMap={night} emissive={new THREE.Color('#d7e9ff')} emissiveIntensity={0.34} normalMap={normal} normalScale={new THREE.Vector2(0.7, 0.7)} specularMap={specular} specular={new THREE.Color('#7596a6')} shininess={12} />
       </mesh>
       <mesh ref={clouds}>
         <sphereGeometry args={[2.29, 72, 72]} />
-        <meshPhongMaterial map={cloud} transparent opacity={0.42} depthWrite={false} />
+        <meshPhongMaterial map={cloud} transparent opacity={0.3} depthWrite={false} />
       </mesh>
       <Atmosphere />
     </group>
@@ -56,16 +56,16 @@ function Atmosphere() {
   const material = useMemo(() => new THREE.ShaderMaterial({
     side: THREE.BackSide,
     transparent: true,
-    blending: THREE.NormalBlending,
+    blending: THREE.AdditiveBlending,
     depthWrite: false,
     uniforms: {
       glowColor: { value: new THREE.Color('#79caff') },
-      sunDirection: { value: new THREE.Vector3(8, 5, 4).normalize() },
+      sunDirection: { value: new THREE.Vector3(3, 4, 8).normalize() },
     },
     vertexShader: `varying vec3 vWorldNormal; varying vec3 vWorldPosition; void main() { vWorldNormal = normalize(mat3(modelMatrix) * normal); vWorldPosition = (modelMatrix * vec4(position, 1.0)).xyz; gl_Position = projectionMatrix * viewMatrix * vec4(vWorldPosition, 1.0); }`,
-    fragmentShader: `uniform vec3 glowColor; uniform vec3 sunDirection; varying vec3 vWorldNormal; varying vec3 vWorldPosition; void main() { vec3 normal = normalize(vWorldNormal); vec3 viewDirection = normalize(cameraPosition - vWorldPosition); float rim = pow(1.0 - max(dot(normal, viewDirection), 0.0), 3.7); float sunlight = pow(max(dot(normal, sunDirection), 0.0), 0.35); float alpha = rim * (0.035 + 0.28 * sunlight); gl_FragColor = vec4(glowColor, alpha); }`,
+    fragmentShader: `uniform vec3 glowColor; uniform vec3 sunDirection; varying vec3 vWorldNormal; varying vec3 vWorldPosition; void main() { vec3 normal = normalize(vWorldNormal); vec3 viewDirection = normalize(cameraPosition - vWorldPosition); float rim = pow(1.0 - max(dot(normal, viewDirection), 0.0), 5.4); float sunlight = pow(max(dot(normal, sunDirection), 0.0), 0.45); float alpha = rim * sunlight * 0.48; gl_FragColor = vec4(glowColor * alpha, alpha); }`,
   }), [])
-  return <mesh material={material}><sphereGeometry args={[2.33, 96, 96]} /></mesh>
+  return <mesh material={material}><sphereGeometry args={[2.29, 96, 96]} /></mesh>
 }
 
 function Moon() {
@@ -78,8 +78,8 @@ function Moon() {
 function Sun() {
   const glow = useRef<THREE.Mesh>(null)
   useFrame((_, delta) => { if (glow.current) glow.current.scale.setScalar(1 + Math.sin(performance.now() * 0.001) * 0.025 + delta * 0) })
-  return <group position={[8, 5, 4]}>
-    <pointLight color="#fff0c4" intensity={120} distance={0} />
+  return <group position={[3, 4, 8]}>
+    <pointLight color="#fff0c4" intensity={100} distance={0} />
     <mesh><sphereGeometry args={[1.1, 48, 48]} /><meshBasicMaterial color="#fff5bd" /></mesh>
     <mesh ref={glow}><sphereGeometry args={[1.36, 48, 48]} /><meshBasicMaterial color="#ffb94d" transparent opacity={0.16} blending={THREE.AdditiveBlending} depthWrite={false} /></mesh>
   </group>
@@ -99,7 +99,7 @@ const labels = [
   { position: [2.7, 0.8, 0] as [number, number, number], title: '大气层', sub: 'Atmospheric glow' },
   { position: [-1.9, -1.9, 0.7] as [number, number, number], title: '昼夜分界线', sub: 'Terminator line' },
   { position: [-5.6, 2.65, -3.2] as [number, number, number], title: '月球', sub: 'The Moon' },
-  { position: [6.8, 4.7, 3.5] as [number, number, number], title: '太阳光照', sub: 'Solar illumination' },
+  { position: [3.5, 4.7, 6.8] as [number, number, number], title: '太阳光照', sub: 'Solar illumination' },
 ]
 
 function Annotations({ visible }: { visible: boolean }) {
@@ -138,6 +138,7 @@ export function Scene({ mode, annotations }: Props) {
   return <>
     <color attach="background" args={['#02050c']} />
     <ambientLight intensity={0.035} />
+    <directionalLight position={[3, 4, 8]} intensity={1.65} color="#fff3d0" />
     <XRMovement />
     <Cabin visible={mode === 'cabin'} />
     <Annotations visible={annotations} />
