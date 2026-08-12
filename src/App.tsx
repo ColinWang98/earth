@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useCallback, useState } from 'react'
 import { Canvas } from '@react-three/fiber'
 import { XR, createXRStore } from '@react-three/xr'
 import { Scene } from './Scene'
@@ -9,6 +9,8 @@ const xrStore = createXRStore({
 
 export function App() {
   const [annotations, setAnnotations] = useState(false)
+  const [skyReady, setSkyReady] = useState(false)
+  const handleSkyReady = useCallback(() => setSkyReady(true), [])
 
   return (
     <main className="experience">
@@ -18,7 +20,7 @@ export function App() {
         gl={{ antialias: true, powerPreference: 'high-performance' }}
       >
         <XR store={xrStore}>
-          <Scene annotations={annotations} />
+          <Scene annotations={annotations} onSkyReady={handleSkyReady} />
         </XR>
       </Canvas>
 
@@ -39,6 +41,7 @@ export function App() {
         <span>自由太空观察 · 地球中心轨道</span>
         <span>桌面：拖拽环绕 · 滚轮缩放</span>
         <span>Quest 3：左摇杆环绕 · 右摇杆拉近/拉远</span>
+        <span>{skyReady ? '真实星表已就绪 · 16,000 颗亮星' : '正在加载真实星表…'}</span>
       </footer>
     </main>
   )

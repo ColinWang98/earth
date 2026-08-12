@@ -1,10 +1,11 @@
-import { useEffect, useMemo, useRef } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import * as THREE from 'three'
 import { OrbitControls, Text } from '@react-three/drei'
 import { useFrame, useThree } from '@react-three/fiber'
 
 type Props = {
   annotations: boolean
+  onSkyReady: () => void
 }
 
 const DAY_MAP = `${import.meta.env.BASE_URL}assets/earth-blue-marble-5k.jpg`
@@ -13,7 +14,6 @@ const NORMAL_MAP = `${import.meta.env.BASE_URL}assets/earth-normal.jpg`
 const SPECULAR_MAP = `${import.meta.env.BASE_URL}assets/earth-specular.jpg`
 const CLOUD_MAP = `${import.meta.env.BASE_URL}assets/earth-clouds-real.jpg`
 const MOON_MAP = `${import.meta.env.BASE_URL}assets/moon.jpg`
-const STAR_MAP = `${import.meta.env.BASE_URL}assets/nasa-wise-all-sky.jpg`
 const LIGHT_POSITION = new THREE.Vector3(3, 4, 30)
 const MOON_POSITION: [number, number, number] = [-22, 8, -16]
 
@@ -68,12 +68,56 @@ function Moon() {
   return <mesh ref={moon} position={MOON_POSITION}><sphereGeometry args={[0.58, 64, 64]} /><meshStandardMaterial map={map} roughness={1} /></mesh>
 }
 
-function DeepSpace() {
-  const map = useTexture(STAR_MAP)
-  return <mesh>
-    <sphereGeometry args={[180, 64, 40]} />
-    <meshBasicMaterial map={map} color="#27313d" side={THREE.BackSide} toneMapped={false} />
-  </mesh>
+const STAR_CATALOG = `${import.meta.env.BASE_URL}assets/stars/hyg-bright-stars.bin`
+
+function starColor(index: number, target: THREE.Color) {
+  if (index < 0.1) return target.set('#9fbcff')
+  if (index < 0.55) return target.lerpColors(new THREE.Color('#c8d8ff'), new THREE.Color('#fff7e4'), (index - 0.1) / 0.45)
+  if (index < 1.25) return target.lerpColors(new THREE.Color('#fff7e4'), new THREE.Color('#ffd19a'), (index - 0.55) / 0.7)
+  return target.set('#ffb16f')
+}
+
+function StarCatalog({ onReady }: { onReady: () => void }) {
+  const [geometry, setGeometry] = useState<THREE.BufferGeometry | null>(null)
+
+  useEffect(() => {
+    let disposed = false
+    let nextGeometry: THREE.BufferGeometry | null = null
+
+    fetch(STAR_CATALOG)
+      .then((response) => response.arrayBuffer())
+      .then((buffer) => {
+        if (disposed) return
+        const source = new Float32Array(buffer)
+        const count = source.length / 5
+        const positions = new Float32Array(count * 3)
+        const colors = new Float32Array(count * 3)
+        const color = new THREE.Color()
+
+        for (let index = 0; index < count; index += 1) {
+          positions[index * 3] = source[index * 5] * 170
+          positions[index * 3 + 1] = source[index * 5 + 1] * 170
+          positions[index * 3 + 2] = source[index * 5 + 2] * 170
+          starColor(source[index * 5 + 3], color)
+          colors[index * 3] = color.r
+          colors[index * 3 + 1] = color.g
+          colors[index * 3 + 2] = color.b
+        }
+
+        nextGeometry = new THREE.BufferGeometry()
+        nextGeometry.setAttribute('position', new THREE.BufferAttribute(positions, 3))
+        nextGeometry.setAttribute('color', new THREE.BufferAttribute(colors, 3))
+        setGeometry(nextGeometry)
+        onReady()
+      })
+
+    return () => { disposed = true; nextGeometry?.dispose() }
+  }, [onReady])
+
+  if (!geometry) return null
+  return <points geometry={geometry} frustumCulled={false} renderOrder={1}>
+    <pointsMaterial size={2.1} sizeAttenuation={false} vertexColors transparent opacity={0.92} depthWrite={false} depthTest={false} blending={THREE.AdditiveBlending} />
+  </points>
 }
 
 const labels = [
@@ -112,13 +156,13 @@ function XRMovement() {
   return <group ref={world}><Earth /><Moon /></group>
 }
 
-export function Scene({ annotations }: Props) {
+export function Scene({ annotations, onSkyReady }: Props) {
   useEffect(() => { document.title = 'Earth Observation / 自由太空观察' }, [])
   return <>
     <color attach="background" args={['#02050c']} />
     <ambientLight intensity={0.4} color="#d3e8fa" />
     <directionalLight position={LIGHT_POSITION} intensity={2.2} color="#fff7df" />
-    <DeepSpace />
+    <StarCatalog onReady={onSkyReady} />
     <XRMovement />
     <Annotations visible={annotations} />
     <OrbitControls enableDamping dampingFactor={0.06} minDistance={2.7} maxDistance={15} target={[0, 0, 0]} />
