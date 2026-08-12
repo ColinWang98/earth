@@ -183,14 +183,12 @@ function XRMovement({ preset }: { preset: CameraPresetId }) {
 
 function PresetDriver({ preset }: { preset: CameraPresetId }) {
   const { camera, gl } = useThree()
-  const target = useMemo(() => new THREE.Vector3(), [])
   const position = CAMERA_PRESETS.find((item) => item.id === preset)?.position ?? CAMERA_PRESETS[0].position
-  useFrame((_, delta) => {
+  useEffect(() => {
     if (gl.xr.isPresenting) return
-    target.set(position[0], position[1], position[2])
-    camera.position.lerp(target, 1 - Math.exp(-delta * 2.6))
+    camera.position.set(position[0], position[1], position[2])
     camera.lookAt(0, 0, 0)
-  })
+  }, [camera, gl, position])
   return null
 }
 
