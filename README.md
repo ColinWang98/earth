@@ -25,7 +25,7 @@ npm run dev
 
 ## 素材来源
 
-地表采用 NASA Blue Marble Next Generation 5400×2700 贴图；云层采用 Solar System Scope 的公开纹理资源；深空星点来自 HYG v4.1（Hipparcos、Yale Bright Star、Gliese）真实星表，并按 CC BY-SA 4.0 署名；月球、法线、镜面反射和夜景纹理来自 Three.js 公开示例资源。正式公开展示前，请按项目用途复核并保留最终素材的来源与授权说明。
+地表采用 NASA Blue Marble Next Generation 5400×2700 贴图；云层采用 Solar System Scope 的 8192×4096 公开纹理资源；深空星点从 HYG v4.1（Hipparcos、Yale Bright Star、Gliese）真实星表中筛选约 2,000 颗，并按 CC BY-SA 4.0 署名；月球、法线、镜面反射和夜景纹理来自 Three.js 公开示例资源。NASA Deep Star Maps 2020 是后续高动态范围银河背景的预留来源；当前版本保持低亮度纯深空，以免纹理背景掩盖真实亮星。正式公开展示前，请按项目用途复核并保留最终素材的来源与授权说明。
 
 ## 边界
 

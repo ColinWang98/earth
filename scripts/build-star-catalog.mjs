@@ -37,7 +37,7 @@ const stars = rows
   }))
   .filter((star) => Number.isFinite(star.ra) && Number.isFinite(star.dec) && Number.isFinite(star.mag) && star.mag > -10)
   .sort((a, b) => a.mag - b.mag)
-  .slice(1, 16001)
+  .slice(1, 2001)
 
 const data = new Float32Array(stars.length * 5)
 for (const [index, star] of stars.entries()) {
