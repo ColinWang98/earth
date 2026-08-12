@@ -4,16 +4,16 @@ import { OrbitControls, Stars, Text } from '@react-three/drei'
 import { useFrame, useThree } from '@react-three/fiber'
 
 type Props = {
-  mode: 'cabin' | 'orbit'
   annotations: boolean
 }
 
-const DAY_MAP = `${import.meta.env.BASE_URL}assets/earth-day.jpg`
+const DAY_MAP = `${import.meta.env.BASE_URL}assets/earth-day-real.jpg`
 const NIGHT_MAP = `${import.meta.env.BASE_URL}assets/earth-night.png`
 const NORMAL_MAP = `${import.meta.env.BASE_URL}assets/earth-normal.jpg`
 const SPECULAR_MAP = `${import.meta.env.BASE_URL}assets/earth-specular.jpg`
-const CLOUD_MAP = `${import.meta.env.BASE_URL}assets/earth-clouds.png`
+const CLOUD_MAP = `${import.meta.env.BASE_URL}assets/earth-clouds-real.jpg`
 const MOON_MAP = `${import.meta.env.BASE_URL}assets/moon.jpg`
+const SUN_MAP = `${import.meta.env.BASE_URL}assets/sun-real.jpg`
 
 function useTexture(url: string) {
   return useMemo(() => {
@@ -41,11 +41,11 @@ function Earth() {
     <group ref={earth}>
       <mesh castShadow receiveShadow>
         <sphereGeometry args={[2.25, 96, 96]} />
-        <meshPhongMaterial map={day} emissiveMap={night} emissive={new THREE.Color('#d7e9ff')} emissiveIntensity={0.34} normalMap={normal} normalScale={new THREE.Vector2(0.7, 0.7)} specularMap={specular} specular={new THREE.Color('#7596a6')} shininess={12} />
+        <meshPhongMaterial map={day} emissiveMap={night} emissive={new THREE.Color('#cfe9ff')} emissiveIntensity={0.16} normalMap={normal} normalScale={new THREE.Vector2(0.62, 0.62)} specularMap={specular} specular={new THREE.Color('#4f7d91')} shininess={8} />
       </mesh>
       <mesh ref={clouds}>
         <sphereGeometry args={[2.29, 72, 72]} />
-        <meshPhongMaterial map={cloud} transparent opacity={0.3} depthWrite={false} />
+        <meshPhongMaterial map={cloud} transparent opacity={0.32} depthWrite={false} color="#d8e5ee" />
       </mesh>
       <Atmosphere />
     </group>
@@ -77,21 +77,12 @@ function Moon() {
 
 function Sun() {
   const glow = useRef<THREE.Mesh>(null)
+  const map = useTexture(SUN_MAP)
   useFrame((_, delta) => { if (glow.current) glow.current.scale.setScalar(1 + Math.sin(performance.now() * 0.001) * 0.025 + delta * 0) })
   return <group position={[3, 4, 8]}>
     <pointLight color="#fff0c4" intensity={100} distance={0} />
-    <mesh><sphereGeometry args={[1.1, 48, 48]} /><meshBasicMaterial color="#fff5bd" /></mesh>
-    <mesh ref={glow}><sphereGeometry args={[1.36, 48, 48]} /><meshBasicMaterial color="#ffb94d" transparent opacity={0.16} blending={THREE.AdditiveBlending} depthWrite={false} /></mesh>
-  </group>
-}
-
-function Cabin({ visible }: { visible: boolean }) {
-  if (!visible) return null
-  return <group>
-    <mesh position={[0, -3.05, 2.8]} rotation={[0.1, 0, 0]}><boxGeometry args={[13, 0.34, 3.2]} /><meshStandardMaterial color="#101a29" metalness={0.8} roughness={0.36} /></mesh>
-    <mesh position={[-5.7, 1.3, 1.7]} rotation={[0, 0.36, 0]}><boxGeometry args={[0.26, 5.6, 1.1]} /><meshStandardMaterial color="#17243a" metalness={0.85} roughness={0.3} /></mesh>
-    <mesh position={[5.7, 1.3, 1.7]} rotation={[0, -0.36, 0]}><boxGeometry args={[0.26, 5.6, 1.1]} /><meshStandardMaterial color="#17243a" metalness={0.85} roughness={0.3} /></mesh>
-    <pointLight position={[0, -1.7, 2.1]} color="#5ea9ff" intensity={0.4} distance={7} />
+    <mesh><sphereGeometry args={[1.1, 64, 64]} /><meshBasicMaterial map={map} color="#fff8dc" /></mesh>
+    <mesh ref={glow}><sphereGeometry args={[1.28, 64, 64]} /><meshBasicMaterial color="#ff9a32" transparent opacity={0.09} blending={THREE.AdditiveBlending} depthWrite={false} /></mesh>
   </group>
 }
 
@@ -133,14 +124,13 @@ function XRMovement() {
   return <group ref={world}><Earth /><Moon /><Sun /><Stars radius={120} depth={50} count={3300} factor={2.3} saturation={0.25} fade speed={0.1} /></group>
 }
 
-export function Scene({ mode, annotations }: Props) {
-  useEffect(() => { document.title = mode === 'cabin' ? 'Earth Observation / 地球观察舱' : 'Free Orbit / 自由轨道' }, [mode])
+export function Scene({ annotations }: Props) {
+  useEffect(() => { document.title = 'Earth Observation / 自由太空观察' }, [])
   return <>
     <color attach="background" args={['#02050c']} />
     <ambientLight intensity={0.035} />
     <directionalLight position={[3, 4, 8]} intensity={1.65} color="#fff3d0" />
     <XRMovement />
-    <Cabin visible={mode === 'cabin'} />
     <Annotations visible={annotations} />
     <OrbitControls enableDamping dampingFactor={0.06} minDistance={4.6} maxDistance={15} target={[0, 0, 0]} />
   </>

@@ -8,7 +8,6 @@ const xrStore = createXRStore({
 })
 
 export function App() {
-  const [mode, setMode] = useState<'cabin' | 'orbit'>('cabin')
   const [annotations, setAnnotations] = useState(true)
 
   return (
@@ -19,7 +18,7 @@ export function App() {
         gl={{ antialias: true, powerPreference: 'high-performance' }}
       >
         <XR store={xrStore}>
-          <Scene mode={mode} annotations={annotations} />
+          <Scene annotations={annotations} />
         </XR>
       </Canvas>
 
@@ -30,9 +29,6 @@ export function App() {
       </header>
 
       <section className="control-panel" aria-label="Scene controls">
-        <button onClick={() => setMode(mode === 'cabin' ? 'orbit' : 'cabin')}>
-          {mode === 'cabin' ? '切换至自由轨道' : '返回太空舱'}
-        </button>
         <button onClick={() => setAnnotations(!annotations)}>
           {annotations ? '隐藏解说' : '显示解说'}
         </button>
@@ -40,6 +36,7 @@ export function App() {
       </section>
 
       <footer>
+        <span>自由太空观察 · 地球中心轨道</span>
         <span>桌面：拖拽环绕 · 滚轮缩放</span>
         <span>Quest 3：左摇杆环绕 · 右摇杆拉近/拉远</span>
       </footer>
