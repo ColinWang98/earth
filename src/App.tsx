@@ -8,7 +8,7 @@ const xrStore = createXRStore({
 })
 
 export function App() {
-  const [annotations, setAnnotations] = useState(true)
+  const [annotations, setAnnotations] = useState(false)
 
   return (
     <main className="experience">
@@ -24,7 +24,7 @@ export function App() {
 
       <header className="title-block">
         <p>EARTH OBSERVATION</p>
-        <h1>日地月观察舱</h1>
+        <h1>日地月观察</h1>
         <span>Earth · Moon · Sun</span>
       </header>
 
