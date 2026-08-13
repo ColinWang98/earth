@@ -87,7 +87,7 @@ function Earth({ preset }: { preset: CameraPresetId }) {
     </mesh>
     <mesh>
       <sphereGeometry args={[2.257, 160, 160]} />
-      <meshBasicMaterial color="#287bb9" transparent opacity={0.18} depthWrite={false} />
+      <meshBasicMaterial color="#197fc3" transparent opacity={0.27} depthWrite={false} />
     </mesh>
     <mesh ref={clouds}>
       <sphereGeometry args={[2.286, 160, 160]} />
