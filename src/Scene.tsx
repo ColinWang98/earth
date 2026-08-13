@@ -54,8 +54,8 @@ function Atmosphere() {
         vec3 sunlight = normalize(vec3(3.0, 4.0, 30.0));
         float rim = pow(1.0 - max(dot(vNormal, viewDirection), 0.0), 2.6);
         float sun = max(dot(vNormal, sunlight), 0.0);
-        vec3 color = mix(vec3(0.015, 0.07, 0.16), vec3(0.22, 0.64, 1.0), sun);
-        gl_FragColor = vec4(color, rim * (0.2 + sun * 0.62));
+        vec3 color = mix(vec3(0.01, 0.04, 0.12), vec3(0.08, 0.32, 0.78), sun);
+        gl_FragColor = vec4(color, rim * (0.06 + sun * 0.24));
       }
     `} />
   </mesh>
@@ -79,15 +79,15 @@ function Earth({ preset }: { preset: CameraPresetId }) {
   return <group ref={earth}>
     <mesh castShadow receiveShadow>
       <sphereGeometry args={[2.25, 160, 160]} />
-      <meshPhongMaterial map={day} color="#f4f8fb" emissiveMap={night} emissive={new THREE.Color('#8eb8dc')} emissiveIntensity={0.32} normalMap={normal} normalScale={new THREE.Vector2(0.36, 0.36)} specularMap={specular} specular={new THREE.Color('#a7d8ee')} shininess={16} />
+      <meshPhongMaterial map={day} color="#f7fbff" emissiveMap={night} emissive={new THREE.Color('#d9edff')} emissiveIntensity={0.24} normalMap={normal} normalScale={new THREE.Vector2(0.48, 0.48)} specularMap={specular} specular={new THREE.Color('#81b5cf')} shininess={12} />
     </mesh>
     <mesh>
       <sphereGeometry args={[2.253, 160, 160]} />
-      <meshBasicMaterial map={day} transparent opacity={0.56} depthWrite={false} />
+      <meshBasicMaterial map={day} transparent opacity={0.72} depthWrite={false} />
     </mesh>
     <mesh>
       <sphereGeometry args={[2.257, 160, 160]} />
-      <meshBasicMaterial color="#197fc3" transparent opacity={0.27} depthWrite={false} />
+      <meshBasicMaterial color="#2f78b5" transparent opacity={0.24} depthWrite={false} />
     </mesh>
     <mesh ref={clouds}>
       <sphereGeometry args={[2.286, 160, 160]} />
