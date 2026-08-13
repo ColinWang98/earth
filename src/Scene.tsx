@@ -88,6 +88,37 @@ function Atmosphere({ segments }: { segments: number }) {
   </mesh>
 }
 
+function Aurora({ segments }: { segments: number }) {
+  const material = useRef<THREE.ShaderMaterial>(null)
+  useFrame((_, delta) => { if (material.current) material.current.uniforms.time.value += delta })
+  return <mesh renderOrder={5}>
+    <sphereGeometry args={[2.33, segments, segments]} />
+    <shaderMaterial ref={material} transparent depthWrite={false} blending={THREE.AdditiveBlending} uniforms={{ time: { value: 0 } }} vertexShader={`
+      varying vec3 vWorldNormal; varying vec3 vWorldPosition;
+      void main() {
+        vWorldNormal = normalize(mat3(modelMatrix) * normal);
+        vWorldPosition = (modelMatrix * vec4(position, 1.0)).xyz;
+        gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+      }
+    `} fragmentShader={`
+      uniform float time; varying vec3 vWorldNormal; varying vec3 vWorldPosition;
+      void main() {
+        vec3 sun = normalize(vec3(-22.0, 0.4, 18.0));
+        vec3 viewDirection = normalize(cameraPosition - vWorldPosition);
+        float latitude = smoothstep(0.50, 0.78, abs(vWorldNormal.y));
+        float nightSide = pow(1.0 - smoothstep(-0.16, 0.24, dot(vWorldNormal, sun)), 1.4);
+        float limb = pow(1.0 - max(dot(vWorldNormal, viewDirection), 0.0), 1.65);
+        float longitude = atan(vWorldNormal.z, vWorldNormal.x);
+        float curtain = pow(0.5 + 0.5 * sin(longitude * 17.0 + vWorldNormal.y * 11.0 + time * 0.34), 4.0);
+        float ripple = 0.58 + 0.42 * sin(longitude * 5.0 - time * 0.18);
+        float alpha = latitude * nightSide * limb * curtain * ripple * 0.16;
+        vec3 color = mix(vec3(0.03, 0.28, 0.17), vec3(0.16, 0.72, 0.43), abs(vWorldNormal.y));
+        gl_FragColor = vec4(color, alpha);
+      }
+    `} />
+  </mesh>
+}
+
 const CLOUD_LONGITUDE_STEPS = 18
 const CLOUD_LATITUDE_STEPS = 9
 
@@ -261,10 +292,11 @@ function Earth({ preset, forecastClouds, onCloudStatus, quality }: { preset: Cam
   return <group ref={earth}>
     <EarthSurface dayMap={day} nightMap={night} oceanMask={oceanMask} segments={segments} />
     <ChinaDetail map={chinaDetail} active={preset === 'china'} quality={quality} />
-    <CloudLayer cloudMap={cloud} forecastMask={forecastMask} radius={2.274} density={0.22 * cloudCoverage} speed={0.0017} offset={0} segments={segments} />
-    <CloudLayer cloudMap={cloud} forecastMask={forecastMask} radius={2.287} density={0.065 * cloudCoverage} speed={-0.0009} offset={0.19} segments={segments} />
-    <CloudLayer cloudMap={cloud} forecastMask={forecastMask} radius={2.303} density={0.025 * cloudCoverage} speed={0.00045} offset={0.47} segments={segments} />
+    <CloudLayer cloudMap={cloud} forecastMask={forecastMask} radius={2.274} density={0.28 * cloudCoverage} speed={0.0017} offset={0} segments={segments} />
+    <CloudLayer cloudMap={cloud} forecastMask={forecastMask} radius={2.287} density={0.085 * cloudCoverage} speed={-0.0009} offset={0.19} segments={segments} />
+    <CloudLayer cloudMap={cloud} forecastMask={forecastMask} radius={2.303} density={0.035 * cloudCoverage} speed={0.00045} offset={0.47} segments={segments} />
     <Atmosphere segments={segments} />
+    <Aurora segments={segments} />
   </group>
 }
 
