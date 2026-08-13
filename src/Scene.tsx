@@ -206,11 +206,13 @@ function EarthSurface({ dayMap, nightMap, oceanMask, segments }: { dayMap: THREE
         float illumination = dot(vWorldNormal, sunlight);
         float daylight = smoothstep(-0.16, 0.24, illumination);
         vec3 day = pow(texture2D(dayMap, vUv).rgb, vec3(0.86)) * 1.38;
-        vec3 night = texture2D(nightMap, vUv).rgb;
+        vec3 night = pow(texture2D(nightMap, vUv).rgb, vec3(0.58));
         float ocean = texture2D(oceanMask, vUv).r;
         vec3 surface = day * mix(0.02, 1.0, daylight);
         surface += vec3(0.012, 0.055, 0.105) * ocean * daylight;
-        surface += night * 0.20 * pow(1.0 - daylight, 1.5);
+        float nightSide = pow(1.0 - daylight, 1.35);
+        surface += day * vec3(0.010, 0.020, 0.040) * nightSide;
+        surface += night * 0.46 * nightSide;
         gl_FragColor = vec4(surface, 1.0);
       }
     `} />
