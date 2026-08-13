@@ -13,17 +13,18 @@ export function App() {
   const [forecastClouds, setForecastClouds] = useState(false)
   const [cloudStatus, setCloudStatus] = useState('静态卫星云层')
   const [preset, setPreset] = useState<CameraPresetId>('orbit')
+  const [quality] = useState(() => /OculusBrowser|Android|iPhone|iPad/i.test(navigator.userAgent) ? 'mobile' as const : 'desktop' as const)
   const handleSkyReady = useCallback(() => setSkyReady(true), [])
 
   return (
     <main className="experience">
       <Canvas
         camera={{ position: [0, 1.25, 9], fov: 48, near: 0.05, far: 400 }}
-        dpr={[1, 1.5]}
+        dpr={quality === 'mobile' ? [1, 1.2] : [1, 1.65]}
         gl={{ antialias: true, powerPreference: 'high-performance' }}
       >
         <XR store={xrStore}>
-          <Scene annotations={annotations} forecastClouds={forecastClouds} preset={preset} onPresetChange={setPreset} onSkyReady={handleSkyReady} onCloudStatus={setCloudStatus} />
+          <Scene annotations={annotations} forecastClouds={forecastClouds} preset={preset} quality={quality} onPresetChange={setPreset} onSkyReady={handleSkyReady} onCloudStatus={setCloudStatus} />
         </XR>
       </Canvas>
 
@@ -51,7 +52,7 @@ export function App() {
         <span>桌面：拖拽环绕 · 滚轮缩放</span>
         <span>Quest 3：左摇杆环绕 · 右摇杆拉近/拉远</span>
         <span>{cloudStatus}</span>
-        <span>{skyReady ? '真实星表已就绪 · 2,000 颗亮星' : '正在加载真实星表…'}</span>
+        <span>{skyReady ? `真实星表已就绪 · ${quality === 'desktop' ? '1,250' : '850'} 颗亮星` : '正在加载真实星表…'}</span>
       </footer>
     </main>
   )
