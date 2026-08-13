@@ -9,7 +9,7 @@ export const CAMERA_PRESETS = [
   { id: 'sunlit', label: '日照侧环绕', position: [5.8, 2.5, 6.4], earthRotation: -0.65, duration: 2.2 },
   { id: 'atmosphere', label: '贴近大气层', position: [0.2, 0.7, 3.08], earthRotation: 0.18, duration: 3.4 },
   { id: 'clouds', label: '云层掠过', position: [2.6, 0.4, 2.8], earthRotation: 0.72, duration: 4.2 },
-  { id: 'china', label: '中国近景', position: [-1.18, 0.52, 2.9], earthRotation: 2.06, duration: 4.1 },
+  { id: 'china', label: '中国近景', position: [0.15, 0.38, 2.92], earthRotation: 2.75, duration: 4.1 },
 ] as const
 
 export type CameraPresetId = typeof CAMERA_PRESETS[number]['id']
@@ -27,9 +27,9 @@ type Props = {
 
 const DAY_MAP = `${import.meta.env.BASE_URL}assets/earth-blue-marble-5k.jpg`
 const NIGHT_MAP = `${import.meta.env.BASE_URL}assets/earth-night.png`
-const NORMAL_MAP = `${import.meta.env.BASE_URL}assets/earth-normal.jpg`
-const SPECULAR_MAP = `${import.meta.env.BASE_URL}assets/earth-specular.jpg`
+const OCEAN_MASK = `${import.meta.env.BASE_URL}assets/earth-specular.jpg`
 const CLOUD_MAP = `${import.meta.env.BASE_URL}assets/earth-clouds-real.jpg`
+const CHINA_DETAIL_MAP = `${import.meta.env.BASE_URL}assets/east-asia-blue-marble-4k.jpg`
 const MOON_MAP = `${import.meta.env.BASE_URL}assets/moon.jpg`
 const LIGHT_POSITION = new THREE.Vector3(3, 4, 30)
 const MOON_POSITION: [number, number, number] = [-22, 8, -16]
@@ -45,6 +45,23 @@ function useTexture(url: string, quality: Quality, colorSpace: THREE.ColorSpace 
     texture.anisotropy = quality === 'desktop' ? 8 : 3
     return texture
   }, [url, quality, colorSpace])
+}
+
+function useLazyTexture(url: string, active: boolean, quality: Quality) {
+  const [texture, setTexture] = useState<THREE.Texture | null>(null)
+  useEffect(() => {
+    if (!active || texture) return
+    const loader = new THREE.TextureLoader()
+    loader.load(url, (nextTexture) => {
+      nextTexture.colorSpace = THREE.SRGBColorSpace
+      nextTexture.generateMipmaps = true
+      nextTexture.minFilter = THREE.LinearMipmapLinearFilter
+      nextTexture.anisotropy = quality === 'desktop' ? 8 : 3
+      setTexture(nextTexture)
+    })
+  }, [active, quality, texture, url])
+  useEffect(() => () => texture?.dispose(), [texture])
+  return texture
 }
 
 function Atmosphere({ segments }: { segments: number }) {
@@ -162,9 +179,69 @@ function CloudLayer({ cloudMap, forecastMask, radius, density, speed, offset, se
         float regional = texture2D(forecastMask, vUv).r;
         float shape = smoothstep(0.28, 0.8, cloud);
         float alpha = shape * density * mix(1.0, regional, usesForecast);
-        float sun = max(dot(vWorldNormal, normalize(vec3(3.0, 4.0, 30.0))), 0.0);
-        vec3 color = mix(vec3(0.48, 0.58, 0.66), vec3(0.98, 1.0, 1.0), 0.45 + sun * 0.55);
-        gl_FragColor = vec4(color, alpha);
+        float daylight = smoothstep(-0.08, 0.36, dot(vWorldNormal, normalize(vec3(3.0, 4.0, 30.0))));
+        vec3 color = mix(vec3(0.055, 0.07, 0.09), vec3(0.98, 1.0, 1.0), daylight);
+        gl_FragColor = vec4(color, alpha * mix(0.22, 1.0, daylight));
+      }
+    `} />
+  </mesh>
+}
+
+function EarthSurface({ dayMap, nightMap, oceanMask, segments }: { dayMap: THREE.Texture, nightMap: THREE.Texture, oceanMask: THREE.Texture, segments: number }) {
+  return <mesh castShadow receiveShadow>
+    <sphereGeometry args={[EARTH_RADIUS, segments, segments]} />
+    <shaderMaterial uniforms={{ dayMap: { value: dayMap }, nightMap: { value: nightMap }, oceanMask: { value: oceanMask } }} vertexShader={`
+      varying vec2 vUv; varying vec3 vWorldNormal; varying vec3 vWorldPosition;
+      void main() {
+        vUv = uv;
+        vWorldNormal = normalize(mat3(modelMatrix) * normal);
+        vWorldPosition = (modelMatrix * vec4(position, 1.0)).xyz;
+        gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+      }
+    `} fragmentShader={`
+      uniform sampler2D dayMap; uniform sampler2D nightMap; uniform sampler2D oceanMask;
+      varying vec2 vUv; varying vec3 vWorldNormal; varying vec3 vWorldPosition;
+      void main() {
+        vec3 sunlight = normalize(vec3(3.0, 4.0, 30.0));
+        vec3 viewDirection = normalize(cameraPosition - vWorldPosition);
+        float illumination = dot(vWorldNormal, sunlight);
+        float daylight = smoothstep(-0.18, 0.20, illumination);
+        vec3 day = pow(texture2D(dayMap, vUv).rgb, vec3(0.76)) * 1.22;
+        vec3 night = texture2D(nightMap, vUv).rgb;
+        float ocean = texture2D(oceanMask, vUv).r;
+        vec3 reflectedSun = reflect(-sunlight, vWorldNormal);
+        float sunGlint = pow(max(dot(reflectedSun, viewDirection), 0.0), 420.0) * ocean * daylight;
+        vec3 surface = day * mix(0.09, 1.0, daylight);
+        surface += night * 0.18 * pow(1.0 - daylight, 1.7);
+        surface += vec3(1.0, 0.98, 0.88) * sunGlint * 0.72;
+        gl_FragColor = vec4(surface, 1.0);
+      }
+    `} />
+  </mesh>
+}
+
+function ChinaDetail({ map, active, quality }: { map: THREE.Texture | null, active: boolean, quality: Quality }) {
+  const material = useRef<THREE.ShaderMaterial>(null)
+  const opacity = useRef(0)
+  useFrame((_, delta) => {
+    opacity.current = THREE.MathUtils.damp(opacity.current, active && map ? 1 : 0, 2.6, delta)
+    if (material.current) material.current.uniforms.opacity.value = opacity.current
+  })
+  if (!map) return null
+  const segments = quality === 'desktop' ? 96 : 56
+  return <mesh renderOrder={2}>
+    <sphereGeometry args={[EARTH_RADIUS + 0.003, segments, segments, Math.PI * 1.5, Math.PI * 0.25, Math.PI * 0.195, Math.PI * 0.222]} />
+    <shaderMaterial ref={material} transparent depthWrite={false} uniforms={{ detailMap: { value: map }, opacity: { value: 0 } }} vertexShader={`
+      varying vec2 vUv; varying vec3 vWorldNormal;
+      void main() { vUv = uv; vWorldNormal = normalize(mat3(modelMatrix) * normal); gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }
+    `} fragmentShader={`
+      uniform sampler2D detailMap; uniform float opacity;
+      varying vec2 vUv; varying vec3 vWorldNormal;
+      void main() {
+        float daylight = smoothstep(-0.18, 0.20, dot(vWorldNormal, normalize(vec3(3.0, 4.0, 30.0))));
+        float edge = smoothstep(0.0, 0.07, vUv.x) * smoothstep(0.0, 0.07, 1.0 - vUv.x) * smoothstep(0.0, 0.09, vUv.y) * smoothstep(0.0, 0.09, 1.0 - vUv.y);
+        vec3 detail = texture2D(detailMap, vUv).rgb * vec3(0.84, 0.94, 1.02);
+        gl_FragColor = vec4(detail * mix(0.07, 1.0, daylight), edge * opacity * daylight);
       }
     `} />
   </mesh>
@@ -174,22 +251,20 @@ function Earth({ preset, forecastClouds, onCloudStatus, quality }: { preset: Cam
   const earth = useRef<THREE.Group>(null)
   const day = useTexture(DAY_MAP, quality)
   const night = useTexture(NIGHT_MAP, quality)
-  const normal = useTexture(NORMAL_MAP, quality, THREE.NoColorSpace)
-  const specular = useTexture(SPECULAR_MAP, quality, THREE.NoColorSpace)
+  const oceanMask = useTexture(OCEAN_MASK, quality, THREE.NoColorSpace)
   const cloud = useTexture(CLOUD_MAP, quality, THREE.NoColorSpace)
+  const chinaDetail = useLazyTexture(CHINA_DETAIL_MAP, preset === 'china', quality)
   const forecastMask = useForecastCloudMask(forecastClouds, onCloudStatus)
   const item = CAMERA_PRESETS.find((entry) => entry.id === preset) ?? CAMERA_PRESETS[0]
   const segments = quality === 'desktop' ? 160 : 96
+  const cloudCoverage = preset === 'china' ? 0.48 : 1
   useFrame((_, delta) => { if (earth.current) earth.current.rotation.y = THREE.MathUtils.damp(earth.current.rotation.y, item.earthRotation, 3 / item.duration, delta) })
   return <group ref={earth}>
-    <mesh castShadow receiveShadow>
-      <sphereGeometry args={[EARTH_RADIUS, segments, segments]} />
-      <meshPhongMaterial map={day} color="#c7e8ff" emissiveMap={night} emissive="#bfdfff" emissiveIntensity={0.055} normalMap={normal} normalScale={new THREE.Vector2(0.38, 0.38)} specularMap={specular} specular="#74b8e8" shininess={17} />
-    </mesh>
-    <mesh renderOrder={1}><sphereGeometry args={[2.252, segments, segments]} /><meshBasicMaterial color="#1873c2" transparent opacity={0.1} depthWrite={false} /></mesh>
-    <CloudLayer cloudMap={cloud} forecastMask={forecastMask} radius={2.274} density={0.46} speed={0.0017} offset={0} segments={segments} />
-    <CloudLayer cloudMap={cloud} forecastMask={forecastMask} radius={2.287} density={0.18} speed={-0.0009} offset={0.19} segments={segments} />
-    <CloudLayer cloudMap={cloud} forecastMask={forecastMask} radius={2.303} density={0.09} speed={0.00045} offset={0.47} segments={segments} />
+    <EarthSurface dayMap={day} nightMap={night} oceanMask={oceanMask} segments={segments} />
+    <ChinaDetail map={chinaDetail} active={preset === 'china'} quality={quality} />
+    <CloudLayer cloudMap={cloud} forecastMask={forecastMask} radius={2.274} density={0.32 * cloudCoverage} speed={0.0017} offset={0} segments={segments} />
+    <CloudLayer cloudMap={cloud} forecastMask={forecastMask} radius={2.287} density={0.11 * cloudCoverage} speed={-0.0009} offset={0.19} segments={segments} />
+    <CloudLayer cloudMap={cloud} forecastMask={forecastMask} radius={2.303} density={0.05 * cloudCoverage} speed={0.00045} offset={0.47} segments={segments} />
     <Atmosphere segments={segments} />
   </group>
 }
