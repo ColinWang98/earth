@@ -15,9 +15,11 @@ export type CameraPresetId = typeof CAMERA_PRESETS[number]['id']
 
 type Props = {
   annotations: boolean
+  forecastClouds: boolean
   preset: CameraPresetId
   onPresetChange: (preset: CameraPresetId) => void
   onSkyReady: () => void
+  onCloudStatus: (status: string) => void
 }
 
 const DAY_MAP = `${import.meta.env.BASE_URL}assets/earth-blue-marble-5k.jpg`
@@ -61,7 +63,92 @@ function Atmosphere() {
   </mesh>
 }
 
-function Earth({ preset }: { preset: CameraPresetId }) {
+const CLOUD_LONGITUDE_STEPS = 18
+const CLOUD_LATITUDE_STEPS = 9
+
+function cloudCoordinates() {
+  const latitudes: number[] = []
+  const longitudes: number[] = []
+  for (let row = 0; row < CLOUD_LATITUDE_STEPS; row += 1) {
+    const latitude = 80 - row * (160 / (CLOUD_LATITUDE_STEPS - 1))
+    for (let column = 0; column < CLOUD_LONGITUDE_STEPS; column += 1) {
+      latitudes.push(latitude)
+      longitudes.push(-180 + column * (360 / CLOUD_LONGITUDE_STEPS))
+    }
+  }
+  return { latitudes, longitudes }
+}
+
+function useForecastCloudMask(enabled: boolean, onStatus: (status: string) => void) {
+  const [texture, setTexture] = useState<THREE.CanvasTexture | null>(null)
+  useEffect(() => {
+    if (!enabled) {
+      setTexture(null)
+      onStatus('静态卫星云层')
+      return
+    }
+    let cancelled = false
+    let timer: number | undefined
+    let activeTexture: THREE.CanvasTexture | null = null
+    const load = async () => {
+      onStatus('正在获取全球预报云量…')
+      try {
+        const { latitudes, longitudes } = cloudCoordinates()
+        const params = new URLSearchParams({
+          latitude: latitudes.join(','),
+          longitude: longitudes.join(','),
+          current: 'cloud_cover,cloud_cover_low,cloud_cover_mid,cloud_cover_high',
+          forecast_days: '1',
+          timezone: 'GMT',
+        })
+        const response = await fetch(`https://api.open-meteo.com/v1/forecast?${params}`)
+        if (!response.ok) throw new Error('Cloud forecast unavailable')
+        const readings = await response.json() as Array<{ current?: { cloud_cover?: number, cloud_cover_low?: number, cloud_cover_mid?: number, cloud_cover_high?: number } }>
+        if (cancelled || !Array.isArray(readings)) return
+        const canvas = document.createElement('canvas')
+        canvas.width = CLOUD_LONGITUDE_STEPS
+        canvas.height = CLOUD_LATITUDE_STEPS
+        const context = canvas.getContext('2d')
+        if (!context) throw new Error('Canvas unavailable')
+        const image = context.createImageData(canvas.width, canvas.height)
+        readings.forEach((reading, index) => {
+          const current = reading.current
+          const total = THREE.MathUtils.clamp((current?.cloud_cover ?? 0) / 100, 0, 1)
+          const lowerClouds = THREE.MathUtils.clamp(((current?.cloud_cover_low ?? 0) * 0.52 + (current?.cloud_cover_mid ?? 0) * 0.3 + (current?.cloud_cover_high ?? 0) * 0.18) / 100, 0, 1)
+          const amount = THREE.MathUtils.smoothstep(total * 0.72 + lowerClouds * 0.28, 0.16, 0.86)
+          const pixel = index * 4
+          const value = Math.round(amount * 255)
+          image.data[pixel] = value
+          image.data[pixel + 1] = value
+          image.data[pixel + 2] = value
+          image.data[pixel + 3] = 255
+        })
+        context.putImageData(image, 0, 0)
+        const nextTexture = new THREE.CanvasTexture(canvas)
+        nextTexture.colorSpace = THREE.NoColorSpace
+        nextTexture.wrapS = THREE.RepeatWrapping
+        nextTexture.minFilter = THREE.LinearFilter
+        nextTexture.magFilter = THREE.LinearFilter
+        activeTexture?.dispose()
+        activeTexture = nextTexture
+        setTexture(nextTexture)
+        onStatus('预报云层 · Open‑Meteo · 每 45 分钟更新')
+      } catch {
+        if (!cancelled) onStatus('预报云层暂不可用 · 已保留静态云层')
+      }
+    }
+    void load()
+    timer = window.setInterval(() => void load(), 45 * 60 * 1000)
+    return () => {
+      cancelled = true
+      if (timer) window.clearInterval(timer)
+      activeTexture?.dispose()
+    }
+  }, [enabled, onStatus])
+  return texture
+}
+
+function Earth({ preset, forecastClouds, onCloudStatus }: { preset: CameraPresetId, forecastClouds: boolean, onCloudStatus: (status: string) => void }) {
   const earth = useRef<THREE.Group>(null)
   const clouds = useRef<THREE.Mesh>(null)
   const day = useTexture(DAY_MAP)
@@ -69,6 +156,7 @@ function Earth({ preset }: { preset: CameraPresetId }) {
   const normal = useTexture(NORMAL_MAP)
   const specular = useTexture(SPECULAR_MAP)
   const cloud = useTexture(CLOUD_MAP)
+  const forecastMask = useForecastCloudMask(forecastClouds, onCloudStatus)
   const targetRotation = CAMERA_PRESETS.find((item) => item.id === preset)?.earthRotation ?? 0
 
   useFrame((_, delta) => {
@@ -91,7 +179,7 @@ function Earth({ preset }: { preset: CameraPresetId }) {
     </mesh>
     <mesh ref={clouds}>
       <sphereGeometry args={[2.286, 160, 160]} />
-      <meshPhongMaterial map={cloud} transparent opacity={0.22} depthWrite={false} color="#e4f1f8" specular="#ffffff" shininess={22} />
+      <meshPhongMaterial map={cloud} alphaMap={forecastMask ?? undefined} transparent opacity={forecastClouds ? 0.42 : 0.22} depthWrite={false} color="#e4f1f8" specular="#ffffff" shininess={22} />
     </mesh>
     <Atmosphere />
   </group>
@@ -160,7 +248,7 @@ function Annotations({ visible }: { visible: boolean }) {
   </group>)}</group>
 }
 
-function XRMovement({ preset }: { preset: CameraPresetId }) {
+function XRMovement({ preset, forecastClouds, onCloudStatus }: { preset: CameraPresetId, forecastClouds: boolean, onCloudStatus: (status: string) => void }) {
   const world = useRef<THREE.Group>(null)
   const { gl } = useThree()
   const orbit = useRef({ theta: 0, phi: 0.15, distance: 9 })
@@ -186,7 +274,7 @@ function XRMovement({ preset }: { preset: CameraPresetId }) {
     const { theta, phi, distance } = orbit.current
     world.current.position.set(-Math.sin(theta) * Math.cos(phi) * distance, -Math.sin(phi) * distance + 0.25, -Math.cos(theta) * Math.cos(phi) * distance)
   })
-  return <group ref={world}><Earth preset={preset} /><Moon /></group>
+  return <group ref={world}><Earth preset={preset} forecastClouds={forecastClouds} onCloudStatus={onCloudStatus} /><Moon /></group>
 }
 
 function PresetDriver({ preset }: { preset: CameraPresetId }) {
@@ -218,14 +306,14 @@ function VRPresetMenu({ onPresetChange }: { onPresetChange: (preset: CameraPrese
   </group>
 }
 
-export function Scene({ annotations, preset, onPresetChange, onSkyReady }: Props) {
+export function Scene({ annotations, forecastClouds, preset, onPresetChange, onSkyReady, onCloudStatus }: Props) {
   useEffect(() => { document.title = 'Earth Observation / 自由太空观察' }, [])
   return <>
     <color attach="background" args={['#010207']} />
     <ambientLight intensity={0.34} color="#d3e8fa" />
     <directionalLight position={LIGHT_POSITION} intensity={2.35} color="#fff7df" />
     <StarCatalog onReady={onSkyReady} />
-    <XRMovement preset={preset} />
+    <XRMovement preset={preset} forecastClouds={forecastClouds} onCloudStatus={onCloudStatus} />
     <PresetDriver preset={preset} />
     <VRPresetMenu onPresetChange={onPresetChange} />
     <Annotations visible={annotations} />

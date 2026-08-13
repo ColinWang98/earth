@@ -10,6 +10,8 @@ const xrStore = createXRStore({
 export function App() {
   const [annotations, setAnnotations] = useState(false)
   const [skyReady, setSkyReady] = useState(false)
+  const [forecastClouds, setForecastClouds] = useState(false)
+  const [cloudStatus, setCloudStatus] = useState('静态卫星云层')
   const [preset, setPreset] = useState<CameraPresetId>('orbit')
   const handleSkyReady = useCallback(() => setSkyReady(true), [])
 
@@ -21,7 +23,7 @@ export function App() {
         gl={{ antialias: true, powerPreference: 'high-performance' }}
       >
         <XR store={xrStore}>
-          <Scene annotations={annotations} preset={preset} onPresetChange={setPreset} onSkyReady={handleSkyReady} />
+          <Scene annotations={annotations} forecastClouds={forecastClouds} preset={preset} onPresetChange={setPreset} onSkyReady={handleSkyReady} onCloudStatus={setCloudStatus} />
         </XR>
       </Canvas>
 
@@ -38,6 +40,9 @@ export function App() {
         <button onClick={() => setAnnotations(!annotations)}>
           {annotations ? '隐藏解说' : '显示解说'}
         </button>
+        <button className={forecastClouds ? 'active' : ''} onClick={() => setForecastClouds(!forecastClouds)}>
+          {forecastClouds ? '预报云层：开' : '预报云层'}
+        </button>
         <button onClick={() => xrStore.enterVR()}>进入 VR</button>
       </section>
 
@@ -45,6 +50,7 @@ export function App() {
         <span>自由太空观察 · 地球中心轨道</span>
         <span>桌面：拖拽环绕 · 滚轮缩放</span>
         <span>Quest 3：左摇杆环绕 · 右摇杆拉近/拉远</span>
+        <span>{cloudStatus}</span>
         <span>{skyReady ? '真实星表已就绪 · 2,000 颗亮星' : '正在加载真实星表…'}</span>
       </footer>
     </main>
