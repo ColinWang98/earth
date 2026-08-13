@@ -31,7 +31,7 @@ const OCEAN_MASK = `${import.meta.env.BASE_URL}assets/earth-specular.jpg`
 const CLOUD_MAP = `${import.meta.env.BASE_URL}assets/earth-clouds-real.jpg`
 const CHINA_DETAIL_MAP = `${import.meta.env.BASE_URL}assets/east-asia-blue-marble-4k.jpg`
 const MOON_MAP = `${import.meta.env.BASE_URL}assets/moon.jpg`
-const LIGHT_POSITION = new THREE.Vector3(3, 4, 30)
+const LIGHT_POSITION = new THREE.Vector3(-22, 0.4, 18)
 const MOON_POSITION: [number, number, number] = [-22, 8, -16]
 const STAR_CATALOG = `${import.meta.env.BASE_URL}assets/stars/hyg-bright-stars.bin`
 const EARTH_RADIUS = 2.25
@@ -78,7 +78,7 @@ function Atmosphere({ segments }: { segments: number }) {
       varying vec3 vWorldNormal; varying vec3 vWorldPosition;
       void main() {
         vec3 viewDirection = normalize(cameraPosition - vWorldPosition);
-        vec3 sunlight = normalize(vec3(3.0, 4.0, 30.0));
+        vec3 sunlight = normalize(vec3(-22.0, 0.4, 18.0));
         float horizon = pow(1.0 - max(dot(vWorldNormal, viewDirection), 0.0), 4.6);
         float daylight = smoothstep(-0.15, 0.85, dot(vWorldNormal, sunlight));
         vec3 color = mix(vec3(0.015, 0.055, 0.16), vec3(0.11, 0.43, 1.0), daylight);
@@ -179,7 +179,7 @@ function CloudLayer({ cloudMap, forecastMask, radius, density, speed, offset, se
         float regional = texture2D(forecastMask, vUv).r;
         float shape = smoothstep(0.28, 0.8, cloud);
         float alpha = shape * density * mix(1.0, regional, usesForecast);
-        float daylight = smoothstep(-0.08, 0.36, dot(vWorldNormal, normalize(vec3(3.0, 4.0, 30.0))));
+        float daylight = smoothstep(-0.08, 0.36, dot(vWorldNormal, normalize(vec3(-22.0, 0.4, 18.0))));
         vec3 color = mix(vec3(0.055, 0.07, 0.09), vec3(0.98, 1.0, 1.0), daylight);
         gl_FragColor = vec4(color, alpha * mix(0.22, 1.0, daylight));
       }
@@ -202,18 +202,16 @@ function EarthSurface({ dayMap, nightMap, oceanMask, segments }: { dayMap: THREE
       uniform sampler2D dayMap; uniform sampler2D nightMap; uniform sampler2D oceanMask;
       varying vec2 vUv; varying vec3 vWorldNormal; varying vec3 vWorldPosition;
       void main() {
-        vec3 sunlight = normalize(vec3(3.0, 4.0, 30.0));
+        vec3 sunlight = normalize(vec3(-22.0, 0.4, 18.0));
         vec3 viewDirection = normalize(cameraPosition - vWorldPosition);
         float illumination = dot(vWorldNormal, sunlight);
-        float daylight = smoothstep(-0.18, 0.20, illumination);
-        vec3 day = pow(texture2D(dayMap, vUv).rgb, vec3(0.76)) * 1.22;
+        float daylight = smoothstep(-0.12, 0.16, illumination);
+        vec3 day = pow(texture2D(dayMap, vUv).rgb, vec3(0.76)) * 1.78;
         vec3 night = texture2D(nightMap, vUv).rgb;
         float ocean = texture2D(oceanMask, vUv).r;
-        vec3 reflectedSun = reflect(-sunlight, vWorldNormal);
-        float sunGlint = pow(max(dot(reflectedSun, viewDirection), 0.0), 420.0) * ocean * daylight;
-        vec3 surface = day * mix(0.09, 1.0, daylight);
-        surface += night * 0.18 * pow(1.0 - daylight, 1.7);
-        surface += vec3(1.0, 0.98, 0.88) * sunGlint * 0.72;
+        vec3 surface = day * mix(0.025, 1.0, daylight);
+        surface += vec3(0.025, 0.12, 0.24) * ocean * daylight;
+        surface += night * 0.12 * pow(1.0 - daylight, 1.9);
         gl_FragColor = vec4(surface, 1.0);
       }
     `} />
@@ -238,7 +236,7 @@ function ChinaDetail({ map, active, quality }: { map: THREE.Texture | null, acti
       uniform sampler2D detailMap; uniform float opacity;
       varying vec2 vUv; varying vec3 vWorldNormal;
       void main() {
-        float daylight = smoothstep(-0.18, 0.20, dot(vWorldNormal, normalize(vec3(3.0, 4.0, 30.0))));
+        float daylight = smoothstep(-0.18, 0.20, dot(vWorldNormal, normalize(vec3(-22.0, 0.4, 18.0))));
         float edge = smoothstep(0.0, 0.07, vUv.x) * smoothstep(0.0, 0.07, 1.0 - vUv.x) * smoothstep(0.0, 0.09, vUv.y) * smoothstep(0.0, 0.09, 1.0 - vUv.y);
         vec3 detail = texture2D(detailMap, vUv).rgb * vec3(0.84, 0.94, 1.02);
         gl_FragColor = vec4(detail * mix(0.07, 1.0, daylight), edge * opacity * daylight);
