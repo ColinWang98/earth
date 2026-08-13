@@ -105,14 +105,18 @@ function Aurora({ segments }: { segments: number }) {
       void main() {
         vec3 sun = normalize(vec3(-22.0, 0.4, 18.0));
         vec3 viewDirection = normalize(cameraPosition - vWorldPosition);
-        float latitude = smoothstep(0.38, 0.70, abs(vWorldNormal.y));
-        float nightSide = pow(1.0 - smoothstep(-0.10, 0.30, dot(vWorldNormal, sun)), 1.12);
-        float limb = pow(1.0 - max(dot(vWorldNormal, viewDirection), 0.0), 1.28);
+        float polar = abs(vWorldNormal.y);
+        float latitude = smoothstep(0.18, 0.58, polar);
+        float nightSide = pow(1.0 - smoothstep(-0.08, 0.34, dot(vWorldNormal, sun)), 1.08);
+        float limb = pow(1.0 - max(dot(vWorldNormal, viewDirection), 0.0), 1.16);
         float longitude = atan(vWorldNormal.z, vWorldNormal.x);
-        float curtain = pow(0.5 + 0.5 * sin(longitude * 17.0 + vWorldNormal.y * 11.0 + time * 0.34), 4.0);
-        float ripple = 0.58 + 0.42 * sin(longitude * 5.0 - time * 0.18);
-        float alpha = latitude * nightSide * limb * curtain * ripple * 0.34;
-        vec3 color = mix(vec3(0.02, 0.35, 0.20), vec3(0.20, 0.82, 0.50), abs(vWorldNormal.y));
+        float curtain = 0.60 + 0.40 * sin(longitude * 10.0 + vWorldNormal.y * 8.0 + time * 0.26);
+        float ripple = 0.72 + 0.28 * sin(longitude * 4.0 - time * 0.14);
+        float broadGlow = latitude * nightSide * limb;
+        float alpha = broadGlow * (0.28 + curtain * ripple * 0.46);
+        float redFringe = smoothstep(0.55, 0.90, polar) * (0.35 + 0.35 * curtain);
+        vec3 green = vec3(0.02, 0.78, 0.39);
+        vec3 color = mix(green, vec3(0.72, 0.08, 0.20), redFringe);
         gl_FragColor = vec4(color, alpha);
       }
     `} />
