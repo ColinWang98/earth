@@ -105,14 +105,14 @@ function Aurora({ segments }: { segments: number }) {
       void main() {
         vec3 sun = normalize(vec3(-22.0, 0.4, 18.0));
         vec3 viewDirection = normalize(cameraPosition - vWorldPosition);
-        float latitude = smoothstep(0.50, 0.78, abs(vWorldNormal.y));
-        float nightSide = pow(1.0 - smoothstep(-0.16, 0.24, dot(vWorldNormal, sun)), 1.4);
-        float limb = pow(1.0 - max(dot(vWorldNormal, viewDirection), 0.0), 1.65);
+        float latitude = smoothstep(0.38, 0.70, abs(vWorldNormal.y));
+        float nightSide = pow(1.0 - smoothstep(-0.10, 0.30, dot(vWorldNormal, sun)), 1.12);
+        float limb = pow(1.0 - max(dot(vWorldNormal, viewDirection), 0.0), 1.28);
         float longitude = atan(vWorldNormal.z, vWorldNormal.x);
         float curtain = pow(0.5 + 0.5 * sin(longitude * 17.0 + vWorldNormal.y * 11.0 + time * 0.34), 4.0);
         float ripple = 0.58 + 0.42 * sin(longitude * 5.0 - time * 0.18);
-        float alpha = latitude * nightSide * limb * curtain * ripple * 0.16;
-        vec3 color = mix(vec3(0.03, 0.28, 0.17), vec3(0.16, 0.72, 0.43), abs(vWorldNormal.y));
+        float alpha = latitude * nightSide * limb * curtain * ripple * 0.34;
+        vec3 color = mix(vec3(0.02, 0.35, 0.20), vec3(0.20, 0.82, 0.50), abs(vWorldNormal.y));
         gl_FragColor = vec4(color, alpha);
       }
     `} />
