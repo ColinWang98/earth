@@ -179,9 +179,9 @@ function CloudLayer({ cloudMap, forecastMask, radius, density, speed, offset, se
         float regional = texture2D(forecastMask, vUv).r;
         float shape = smoothstep(0.28, 0.8, cloud);
         float alpha = shape * density * mix(1.0, regional, usesForecast);
-        float daylight = smoothstep(-0.08, 0.36, dot(vWorldNormal, normalize(vec3(-22.0, 0.4, 18.0))));
-        vec3 color = mix(vec3(0.055, 0.07, 0.09), vec3(0.98, 1.0, 1.0), daylight);
-        gl_FragColor = vec4(color, alpha * mix(0.22, 1.0, daylight));
+        float daylight = smoothstep(-0.16, 0.24, dot(vWorldNormal, normalize(vec3(-22.0, 0.4, 18.0))));
+        vec3 color = mix(vec3(0.02, 0.026, 0.04), vec3(0.82, 0.85, 0.87), daylight);
+        gl_FragColor = vec4(color, alpha * mix(0.10, 0.60, daylight));
       }
     `} />
   </mesh>
@@ -203,15 +203,14 @@ function EarthSurface({ dayMap, nightMap, oceanMask, segments }: { dayMap: THREE
       varying vec2 vUv; varying vec3 vWorldNormal; varying vec3 vWorldPosition;
       void main() {
         vec3 sunlight = normalize(vec3(-22.0, 0.4, 18.0));
-        vec3 viewDirection = normalize(cameraPosition - vWorldPosition);
         float illumination = dot(vWorldNormal, sunlight);
-        float daylight = smoothstep(-0.12, 0.16, illumination);
-        vec3 day = pow(texture2D(dayMap, vUv).rgb, vec3(0.76)) * 1.78;
+        float daylight = smoothstep(-0.16, 0.24, illumination);
+        vec3 day = pow(texture2D(dayMap, vUv).rgb, vec3(0.86)) * 1.38;
         vec3 night = texture2D(nightMap, vUv).rgb;
         float ocean = texture2D(oceanMask, vUv).r;
-        vec3 surface = day * mix(0.025, 1.0, daylight);
-        surface += vec3(0.025, 0.12, 0.24) * ocean * daylight;
-        surface += night * 0.12 * pow(1.0 - daylight, 1.9);
+        vec3 surface = day * mix(0.02, 1.0, daylight);
+        surface += vec3(0.012, 0.055, 0.105) * ocean * daylight;
+        surface += night * 0.20 * pow(1.0 - daylight, 1.5);
         gl_FragColor = vec4(surface, 1.0);
       }
     `} />
@@ -236,7 +235,7 @@ function ChinaDetail({ map, active, quality }: { map: THREE.Texture | null, acti
       uniform sampler2D detailMap; uniform float opacity;
       varying vec2 vUv; varying vec3 vWorldNormal;
       void main() {
-        float daylight = smoothstep(-0.18, 0.20, dot(vWorldNormal, normalize(vec3(-22.0, 0.4, 18.0))));
+        float daylight = smoothstep(-0.16, 0.24, dot(vWorldNormal, normalize(vec3(-22.0, 0.4, 18.0))));
         float edge = smoothstep(0.0, 0.07, vUv.x) * smoothstep(0.0, 0.07, 1.0 - vUv.x) * smoothstep(0.0, 0.09, vUv.y) * smoothstep(0.0, 0.09, 1.0 - vUv.y);
         vec3 detail = texture2D(detailMap, vUv).rgb * vec3(0.84, 0.94, 1.02);
         gl_FragColor = vec4(detail * mix(0.07, 1.0, daylight), edge * opacity * daylight);
@@ -260,9 +259,9 @@ function Earth({ preset, forecastClouds, onCloudStatus, quality }: { preset: Cam
   return <group ref={earth}>
     <EarthSurface dayMap={day} nightMap={night} oceanMask={oceanMask} segments={segments} />
     <ChinaDetail map={chinaDetail} active={preset === 'china'} quality={quality} />
-    <CloudLayer cloudMap={cloud} forecastMask={forecastMask} radius={2.274} density={0.32 * cloudCoverage} speed={0.0017} offset={0} segments={segments} />
-    <CloudLayer cloudMap={cloud} forecastMask={forecastMask} radius={2.287} density={0.11 * cloudCoverage} speed={-0.0009} offset={0.19} segments={segments} />
-    <CloudLayer cloudMap={cloud} forecastMask={forecastMask} radius={2.303} density={0.05 * cloudCoverage} speed={0.00045} offset={0.47} segments={segments} />
+    <CloudLayer cloudMap={cloud} forecastMask={forecastMask} radius={2.274} density={0.22 * cloudCoverage} speed={0.0017} offset={0} segments={segments} />
+    <CloudLayer cloudMap={cloud} forecastMask={forecastMask} radius={2.287} density={0.065 * cloudCoverage} speed={-0.0009} offset={0.19} segments={segments} />
+    <CloudLayer cloudMap={cloud} forecastMask={forecastMask} radius={2.303} density={0.025 * cloudCoverage} speed={0.00045} offset={0.47} segments={segments} />
     <Atmosphere segments={segments} />
   </group>
 }
