@@ -270,8 +270,9 @@ function ChinaDetail({ map, active, quality }: { map: THREE.Texture | null, acti
       void main() {
         float daylight = smoothstep(-0.16, 0.24, dot(vWorldNormal, normalize(vec3(-22.0, 0.4, 18.0))));
         float edge = smoothstep(0.0, 0.07, vUv.x) * smoothstep(0.0, 0.07, 1.0 - vUv.x) * smoothstep(0.0, 0.09, vUv.y) * smoothstep(0.0, 0.09, 1.0 - vUv.y);
-        vec3 detail = texture2D(detailMap, vUv).rgb * vec3(0.84, 0.94, 1.02);
-        gl_FragColor = vec4(detail * mix(0.07, 1.0, daylight), edge * opacity * daylight);
+        vec3 detail = pow(texture2D(detailMap, vUv).rgb, vec3(0.58)) * vec3(1.12, 1.18, 1.25);
+        float localExposure = mix(0.38, 1.0, daylight);
+        gl_FragColor = vec4(detail * localExposure, edge * opacity * localExposure);
       }
     `} />
   </mesh>
