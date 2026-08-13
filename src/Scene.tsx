@@ -284,7 +284,7 @@ function Earth({ preset, forecastClouds, onCloudStatus, quality }: { preset: Cam
   const night = useTexture(NIGHT_MAP, quality)
   const oceanMask = useTexture(OCEAN_MASK, quality, THREE.NoColorSpace)
   const cloud = useTexture(CLOUD_MAP, quality, THREE.NoColorSpace)
-  const chinaDetail = useLazyTexture(CHINA_DETAIL_MAP, preset === 'china', quality)
+  const chinaDetail = useLazyTexture(CHINA_DETAIL_MAP, true, quality)
   const forecastMask = useForecastCloudMask(forecastClouds, onCloudStatus)
   const item = CAMERA_PRESETS.find((entry) => entry.id === preset) ?? CAMERA_PRESETS[0]
   const segments = quality === 'desktop' ? 160 : 96
