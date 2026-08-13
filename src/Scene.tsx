@@ -9,7 +9,7 @@ export const CAMERA_PRESETS = [
   { id: 'sunlit', label: '日照侧环绕', position: [5.8, 2.5, 6.4], earthRotation: -0.65, duration: 2.2 },
   { id: 'atmosphere', label: '贴近大气层', position: [0.2, 0.7, 3.08], earthRotation: 0.18, duration: 3.4 },
   { id: 'clouds', label: '云层掠过', position: [2.6, 0.4, 2.8], earthRotation: 0.72, duration: 4.2 },
-  { id: 'china', label: '中国近景', position: [-2, 1.1, 4.1], earthRotation: 2.06, duration: 3.6 },
+  { id: 'china', label: '中国近景', position: [-1.18, 0.52, 2.9], earthRotation: 2.06, duration: 4.1 },
 ] as const
 
 export type CameraPresetId = typeof CAMERA_PRESETS[number]['id']
@@ -184,7 +184,7 @@ function Earth({ preset, forecastClouds, onCloudStatus, quality }: { preset: Cam
   return <group ref={earth}>
     <mesh castShadow receiveShadow>
       <sphereGeometry args={[EARTH_RADIUS, segments, segments]} />
-      <meshPhongMaterial map={day} color="#c7e8ff" emissiveMap={night} emissive="#8bb8de" emissiveIntensity={0.18} normalMap={normal} normalScale={new THREE.Vector2(0.38, 0.38)} specularMap={specular} specular="#74b8e8" shininess={17} />
+      <meshPhongMaterial map={day} color="#c7e8ff" emissiveMap={night} emissive="#bfdfff" emissiveIntensity={0.055} normalMap={normal} normalScale={new THREE.Vector2(0.38, 0.38)} specularMap={specular} specular="#74b8e8" shininess={17} />
     </mesh>
     <mesh renderOrder={1}><sphereGeometry args={[2.252, segments, segments]} /><meshBasicMaterial color="#1873c2" transparent opacity={0.1} depthWrite={false} /></mesh>
     <CloudLayer cloudMap={cloud} forecastMask={forecastMask} radius={2.274} density={0.46} speed={0.0017} offset={0} segments={segments} />
@@ -322,8 +322,8 @@ export function Scene({ annotations, forecastClouds, preset, quality, onPresetCh
   useEffect(() => { document.title = 'Earth Observation / 自由太空观察' }, [])
   return <>
     <color attach="background" args={['#010207']} />
-    <ambientLight intensity={0.47} color="#d6ebff" />
-    <directionalLight position={LIGHT_POSITION} intensity={2.7} color="#fff6db" />
+    <ambientLight intensity={0.09} color="#c6d7e7" />
+    <directionalLight position={LIGHT_POSITION} intensity={3.15} color="#fff7df" />
     <StarCatalog onReady={onSkyReady} quality={quality} />
     <XRMovement preset={preset} forecastClouds={forecastClouds} onCloudStatus={onCloudStatus} quality={quality} />
     <CameraDirector preset={preset} controls={controls} motion={motion} />
