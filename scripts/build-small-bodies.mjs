@@ -14,7 +14,7 @@ for (const [designation, label] of targets) {
   bodies.push(parseSmallBody(await response.json(), label))
 }
 
-const outputDir = resolve(import.meta.dirname, '../public/assets/solar')
+const outputDir = resolve(import.meta.dirname, '../src/data')
 await mkdir(outputDir, { recursive: true })
 await writeFile(resolve(outputDir, 'small-bodies.json'), `${JSON.stringify({ source: 'NASA/JPL SBDB', generatedAt: new Date().toISOString(), bodies }, null, 2)}\n`)
 console.log(`JPL SBDB snapshot: ${bodies.map((body) => body.englishLabel).join(', ')}`)

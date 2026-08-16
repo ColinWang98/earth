@@ -1,4 +1,4 @@
-import catalogue from '../public/assets/solar/small-bodies.json'
+import catalogue from './data/small-bodies.json'
 import { propagateKeplerOrbit, type KeplerOrbit } from './orbits'
 
 export type SmallBodyRecord = KeplerOrbit & { id: string; label: string; englishLabel: string }
