@@ -57,6 +57,7 @@ const MOON_MAP = `${import.meta.env.BASE_URL}assets/moon.jpg`
 const SUN_MAP = `${import.meta.env.BASE_URL}assets/sun-real.jpg`
 const STAR_CATALOG = `${import.meta.env.BASE_URL}assets/stars/hyg-bright-stars.bin`
 const SMALL_BODY_SUN_DIRECTION = new THREE.Vector3(1, 0, 0)
+const DEFAULT_ATMOSPHERE_SUN_DIRECTION = new THREE.Vector3(1, 0.2, 0.4).normalize()
 
 const PLANET_VISUALS: Record<string, { color: string; texture?: string; tilt: number; periodDays: number; flattening?: number; atmosphere?: string; rings?: 'saturn' | 'uranus'; model?: string }> = {
   mercury: { color: '#a7a39d', tilt: 0.034, periodDays: 58.646, model: `${import.meta.env.BASE_URL}assets/planets/mercury.glb` },
@@ -190,10 +191,43 @@ function useEarthObservationTexture(utcMs: number, quality: Quality, closeView: 
   return { ...textures, mix: textures.secondary === textures.primary ? 0 : frames.mix }
 }
 
-function Atmosphere({ radius, segments, color = '#3b92ff' }: { radius: number; segments: number; color?: string }) {
-  return <mesh renderOrder={4} scale={1.025}>
-    <sphereGeometry args={[radius, segments, segments]} />
-    <meshBasicMaterial color={color} transparent opacity={0.11} depthWrite={false} side={THREE.BackSide} blending={THREE.AdditiveBlending} />
+function Atmosphere({ radius, segments, sunDirection = DEFAULT_ATMOSPHERE_SUN_DIRECTION, color = '#3b92ff' }: { radius: number; segments: number; sunDirection?: THREE.Vector3; color?: string }) {
+  const uniforms = useMemo(() => ({
+    atmosphereColor: { value: new THREE.Color(color) },
+    sunDirection: { value: sunDirection.clone() },
+  }), [color])
+  useFrame(() => { uniforms.sunDirection.value.copy(sunDirection) })
+  return <mesh renderOrder={4} scale={1.04}>
+    <sphereGeometry args={[radius, Math.min(segments, 96), Math.min(segments, 72)]} />
+    <shaderMaterial transparent depthWrite={false} side={THREE.BackSide} blending={THREE.AdditiveBlending} uniforms={uniforms} vertexShader={`
+      varying vec3 vWorldPosition; varying vec3 vWorldNormal;
+      void main(){
+        vec4 worldPosition=modelMatrix*vec4(position,1.0);
+        vWorldPosition=worldPosition.xyz;
+        vWorldNormal=normalize(mat3(modelMatrix)*normal);
+        gl_Position=projectionMatrix*viewMatrix*worldPosition;
+      }
+    `} fragmentShader={`
+      uniform vec3 atmosphereColor; uniform vec3 sunDirection;
+      varying vec3 vWorldPosition; varying vec3 vWorldNormal;
+      void main(){
+        vec3 viewDirection=normalize(cameraPosition-vWorldPosition);
+        vec3 lightDirection=normalize(sunDirection);
+        float viewCosine=abs(dot(normalize(vWorldNormal),viewDirection));
+        float horizon=pow(1.0-viewCosine,2.35);
+        float solarAltitude=dot(normalize(vWorldNormal),lightDirection);
+        float dayLight=smoothstep(-0.32,0.18,solarAltitude);
+        float rayleighStrength=horizon*(0.16+0.84*dayLight);
+        float forwardScatter=pow(max(dot(viewDirection,lightDirection),0.0),10.0);
+        float mieStrength=horizon*forwardScatter*dayLight;
+        float sunsetWarmth=horizon*smoothstep(-0.22,0.04,solarAltitude)*(1.0-smoothstep(0.04,0.42,solarAltitude));
+        vec3 rayleighColor=atmosphereColor*rayleighStrength;
+        vec3 mieColor=vec3(0.95,0.78,0.55)*mieStrength*0.7;
+        vec3 sunsetColor=vec3(1.0,0.34,0.06)*sunsetWarmth*0.42;
+        float alpha=clamp(rayleighStrength*0.56+mieStrength*0.32+sunsetWarmth*0.4,0.0,0.82);
+        gl_FragColor=vec4(rayleighColor+mieColor+sunsetColor,alpha);
+      }
+    `} />
   </mesh>
 }
 
@@ -242,7 +276,7 @@ function EarthGlobe({ baseMap, dayMaps, dayMix, quality, radius, sunDirection }:
   const segments = quality === 'desktop' ? 128 : 72
   return <group>
     <EarthSurface baseMap={baseMap} dayMaps={dayMaps} dayMix={dayMix} nightMap={night} oceanMask={ocean} radius={radius} segments={segments} sunDirection={sunDirection} />
-    <Atmosphere radius={radius} segments={segments} />
+    <Atmosphere radius={radius} segments={segments} sunDirection={sunDirection} />
   </group>
 }
 
@@ -364,17 +398,60 @@ function RingSystem({ kind }: { kind: 'saturn' | 'uranus' }) {
   </mesh>
 }
 
+function CoronaLayer({ scale, opacity, speed, quality }: { scale: number; opacity: number; speed: number; quality: Quality }) {
+  const uniforms = useMemo(() => ({ time: { value: 0 }, opacity: { value: opacity } }), [opacity])
+  useFrame((_, delta) => { uniforms.time.value += delta * speed })
+  return <mesh scale={scale} renderOrder={2}>
+    <sphereGeometry args={[1, quality === 'desktop' ? 48 : 24, quality === 'desktop' ? 36 : 18]} />
+    <shaderMaterial transparent depthWrite={false} side={THREE.BackSide} blending={THREE.AdditiveBlending} uniforms={uniforms} vertexShader={`
+      varying vec3 vWorldPosition; varying vec3 vWorldNormal;
+      void main(){vec4 worldPosition=modelMatrix*vec4(position,1.0);vWorldPosition=worldPosition.xyz;vWorldNormal=normalize(mat3(modelMatrix)*normal);gl_Position=projectionMatrix*viewMatrix*worldPosition;}
+    `} fragmentShader={`
+      uniform float time; uniform float opacity; varying vec3 vWorldPosition; varying vec3 vWorldNormal;
+      void main(){
+        vec3 viewDirection=normalize(cameraPosition-vWorldPosition);
+        float rim=pow(1.0-abs(dot(normalize(vWorldNormal),viewDirection)),1.55);
+        float angle=atan(vWorldNormal.y,vWorldNormal.x);
+        float filaments=0.68+0.2*sin(angle*13.0+time*0.18)+0.12*sin(angle*29.0-time*0.11);
+        float coronaPulse=0.94+0.06*sin(time*0.45+angle*5.0);
+        gl_FragColor=vec4(vec3(1.0,0.38,0.08)*filaments*coronaPulse,rim*opacity);
+      }
+    `} />
+  </mesh>
+}
+
 function SunVisual({ detailed, quality }: { detailed: boolean; quality: Quality }) {
   const map = useTexture(SUN_MAP, quality)
-  const material = useRef<THREE.ShaderMaterial>(null)
-  useFrame((_, delta) => { if (material.current) material.current.uniforms.time.value += delta })
+  const uniforms = useMemo(() => ({ map: { value: map }, time: { value: 0 } }), [map])
+  useFrame((_, delta) => { uniforms.time.value += delta })
   return <group>
-    <mesh><sphereGeometry args={[1, detailed ? 72 : 28, detailed ? 56 : 20]} /><shaderMaterial ref={material} uniforms={{ map: { value: map }, time: { value: 0 } }} vertexShader={`varying vec2 vUv;varying vec3 n;void main(){vUv=uv;n=normal;gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0);}`} fragmentShader={`uniform sampler2D map;uniform float time;varying vec2 vUv;varying vec3 n;void main(){vec2 uv=vUv+vec2(time*0.002,0.004*sin(time*0.15+vUv.y*18.0));vec3 c=texture2D(map,uv).rgb;c*=1.35+0.16*sin(time+vUv.x*40.0);gl_FragColor=vec4(c,1.0);}`} /></mesh>
-    <mesh scale={1.18}><sphereGeometry args={[1, 32, 24]} /><meshBasicMaterial color="#ff9d42" transparent opacity={0.14} side={THREE.BackSide} blending={THREE.AdditiveBlending} depthWrite={false} /></mesh>
+    <mesh><sphereGeometry args={[1, detailed ? 96 : 40, detailed ? 72 : 28]} /><shaderMaterial uniforms={uniforms} vertexShader={`
+      varying vec2 vUv; varying vec3 vWorldPosition; varying vec3 vWorldNormal;
+      void main(){vUv=uv;vec4 worldPosition=modelMatrix*vec4(position,1.0);vWorldPosition=worldPosition.xyz;vWorldNormal=normalize(mat3(modelMatrix)*normal);gl_Position=projectionMatrix*viewMatrix*worldPosition;}
+    `} fragmentShader={`
+      uniform sampler2D map; uniform float time; varying vec2 vUv; varying vec3 vWorldPosition; varying vec3 vWorldNormal;
+      void main(){
+        float latitude=abs(vUv.y-0.5)*2.0;
+        float differentialRotation=time*(0.0019-0.00055*latitude*latitude);
+        vec2 uv=vec2(fract(vUv.x+differentialRotation),vUv.y+0.0025*sin(vUv.x*20.0+time*0.08));
+        vec3 surface=texture2D(map,uv).rgb;
+        float granulation=0.5+0.24*sin(uv.x*137.0+sin(uv.y*91.0))+0.18*sin(uv.y*173.0-time*0.12)+0.08*sin((uv.x+uv.y)*311.0);
+        vec3 viewDirection=normalize(cameraPosition-vWorldPosition);
+        float mu=clamp(dot(normalize(vWorldNormal),viewDirection),0.0,1.0);
+        float limbDarkening=0.48+0.52*pow(mu,0.58);
+        float faculae=(1.0-mu)*smoothstep(0.62,0.92,granulation)*0.22;
+        vec3 temperatureTint=mix(vec3(1.0,0.23,0.025),vec3(1.0,0.78,0.32),clamp(surface.r*1.25,0.0,1.0));
+        vec3 color=mix(surface*1.25,temperatureTint,0.28)*(0.9+granulation*0.25+faculae)*limbDarkening;
+        gl_FragColor=vec4(color,1.0);
+      }
+    `} /></mesh>
+    <CoronaLayer scale={1.12} opacity={0.28} speed={1} quality={quality} />
+    {quality === 'desktop' && <CoronaLayer scale={detailed ? 1.34 : 1.25} opacity={0.15} speed={0.68} quality={quality} />}
+    {quality === 'desktop' && detailed && <CoronaLayer scale={1.62} opacity={0.075} speed={0.42} quality={quality} />}
   </group>
 }
 
-function TexturedPlanet({ body, quality, utcMs }: { body: CelestialBodyState; quality: Quality; utcMs: number }) {
+function TexturedPlanet({ body, quality, sunDirection, utcMs }: { body: CelestialBodyState; quality: Quality; sunDirection: THREE.Vector3; utcMs: number }) {
   const visual = PLANET_VISUALS[body.id]!
   const map = useTexture(visual.texture ?? MOON_MAP, quality)
   const rotation = visual ? (utcMs - J2000_MS) / 86_400_000 / visual.periodDays * Math.PI * 2 : 0
@@ -382,7 +459,7 @@ function TexturedPlanet({ body, quality, utcMs }: { body: CelestialBodyState; qu
     <group rotation={[0, rotation, 0]} scale={[1, visual?.flattening ?? 1, 1]}>
       {visual?.model ? <NasaModel url={visual.model} /> : <mesh><sphereGeometry args={[1, quality === 'desktop' ? 72 : 40, quality === 'desktop' ? 56 : 30]} /><meshStandardMaterial map={map} color={visual?.color ?? body.color} roughness={body.id === 'jupiter' || body.id === 'saturn' ? 0.78 : 0.94} /></mesh>}
     </group>
-    {visual?.atmosphere && <Atmosphere radius={1} segments={quality === 'desktop' ? 64 : 32} color={visual.atmosphere} />}
+    {visual?.atmosphere && <Atmosphere radius={1} segments={quality === 'desktop' ? 64 : 32} color={visual.atmosphere} sunDirection={sunDirection} />}
     {visual?.rings && <RingSystem kind={visual.rings} />}
   </group>
 }
@@ -390,7 +467,7 @@ function TexturedPlanet({ body, quality, utcMs }: { body: CelestialBodyState; qu
 function DetailedPlanet({ body, dayMap, quality, sunDirection, utcMs }: { body: CelestialBodyState; dayMap: EarthObservationTextures; quality: Quality; sunDirection: THREE.Vector3; utcMs: number }) {
   if (body.id === 'earth') return <EarthGlobe baseMap={dayMap.base} dayMaps={[dayMap.primary, dayMap.secondary]} dayMix={dayMap.mix} quality={quality} radius={1} sunDirection={sunDirection} />
   if (body.id === 'sun') return <SunVisual detailed quality={quality} />
-  return <TexturedPlanet body={body} quality={quality} utcMs={utcMs} />
+  return <TexturedPlanet body={body} quality={quality} sunDirection={sunDirection} utcMs={utcMs} />
 }
 
 function planetPosition(body: CelestialBodyState, observer: AuVector, band: SpaceBand, target: THREE.Vector3) {
@@ -402,6 +479,10 @@ function planetPosition(body: CelestialBodyState, observer: AuVector, band: Spac
   const worldScale = band === 'surface' ? 50_000 : band === 'orbital' ? 5_000 : 900
   const renderedDistance = compressedRenderDistance(distance) * worldScale
   return target.set(x, z, -y).normalize().multiplyScalar(renderedDistance)
+}
+
+function heliocentricSunDirection(body: CelestialBodyState) {
+  return new THREE.Vector3(-body.positionAu[0], -body.positionAu[2], body.positionAu[1]).normalize()
 }
 
 const ORBIT_IDS: Exclude<CelestialBodyId, 'sun' | 'moon'>[] = ['mercury', 'venus', 'earth', 'mars', 'jupiter', 'saturn', 'uranus', 'neptune']
@@ -438,6 +519,8 @@ function FloatingBody({ body, dayMap, observer, band, nearestId, quality, select
   const visualGroup = useRef<THREE.Group>(null)
   const labelGroup = useRef<THREE.Group>(null)
   const target = useMemo(() => new THREE.Vector3(), [])
+  const heliocentricLight = useMemo(() => heliocentricSunDirection(body), [body.positionAu[0], body.positionAu[1], body.positionAu[2]])
+  const localSunDirection = body.id === 'earth' ? sunDirection : heliocentricLight
   const detailed = selected || body.id === nearestId
   useFrame(() => {
     if (!group.current || !visualGroup.current) return
@@ -454,7 +537,7 @@ function FloatingBody({ body, dayMap, observer, band, nearestId, quality, select
   return <group ref={group} onClick={(event) => { event.stopPropagation(); onSelect(body.id) }}>
     {body.id === 'sun' && <pointLight intensity={quality === 'desktop' ? 5.2 : 3.8} distance={240} decay={0.45} color="#fff0c2" />}
     <group ref={visualGroup}>
-      {detailed ? <DetailedPlanet body={body} dayMap={dayMap} quality={quality} sunDirection={sunDirection} utcMs={utcMs} /> : body.id === 'sun' ? <SunVisual detailed={false} quality={quality} /> : <mesh><sphereGeometry args={[1, 24, 18]} /><meshStandardMaterial color={body.color} roughness={0.9} /></mesh>}
+      {detailed ? <DetailedPlanet body={body} dayMap={dayMap} quality={quality} sunDirection={localSunDirection} utcMs={utcMs} /> : body.id === 'sun' ? <SunVisual detailed={false} quality={quality} /> : <mesh><sphereGeometry args={[1, 24, 18]} /><meshStandardMaterial color={body.color} roughness={0.9} /></mesh>}
       {selected && band === 'solar' && <mesh rotation={[Math.PI / 2, 0, 0]}><ringGeometry args={[1.35, 1.48, 48]} /><meshBasicMaterial color="#9bdcff" transparent opacity={0.9} side={THREE.DoubleSide} /></mesh>}
     </group>
     {band === 'solar' && (forceLabel || selected || ['sun', 'earth', 'mars', 'jupiter', 'saturn', 'neptune'].includes(body.id)) && <group ref={labelGroup}><Text fontSize={forceLabel ? 0.22 : 0.32} color={selected ? '#ffffff' : forceLabel ? '#d9a36c' : '#9fb7ca'} anchorX="left">{body.label}</Text></group>}

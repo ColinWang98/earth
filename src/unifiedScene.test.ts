@@ -31,6 +31,22 @@ describe('unified earth and solar-system application boundary', () => {
     expect(app).toContain('数据时刻')
   })
 
+  it('uses sun-driven atmospheric scattering instead of a constant translucent shell', () => {
+    const scene = readFileSync(new URL('./Scene.tsx', import.meta.url), 'utf8')
+    expect(scene).toContain('rayleighStrength')
+    expect(scene).toContain('mieStrength')
+    expect(scene).toContain('sunsetWarmth')
+    expect(scene).not.toContain('<meshBasicMaterial color={color} transparent opacity={0.11}')
+  })
+
+  it('renders a structured solar surface and layered corona', () => {
+    const scene = readFileSync(new URL('./Scene.tsx', import.meta.url), 'utf8')
+    expect(scene).toContain('limbDarkening')
+    expect(scene).toContain('granulation')
+    expect(scene).toContain('CoronaLayer')
+    expect(scene).toContain('coronaPulse')
+  })
+
   it('does not ship Gaia runtime or build tasks', () => {
     const packageJson = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')) as { scripts: Record<string, string> }
     expect(packageJson.scripts['data:gaia']).toBeUndefined()
