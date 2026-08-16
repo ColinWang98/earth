@@ -5,6 +5,7 @@ import {
   advanceSimulationTime,
   clampSimulationTime,
   getEarthFixedSunDirection,
+  getPlanetOrbitPath,
   getSolarSystemSnapshot,
 } from './astro'
 
@@ -55,5 +56,14 @@ describe('solar system snapshot', () => {
 
     expect(distance).toBeGreaterThan(0.002)
     expect(distance).toBeLessThan(0.003)
+  })
+})
+
+describe('three-dimensional planet orbit paths', () => {
+  it('samples a finite inclined path around the selected epoch', () => {
+    const path = getPlanetOrbitPath('mars', Date.UTC(2026, 0, 1), 96)
+    expect(path).toHaveLength(96)
+    expect(path.flat().every(Number.isFinite)).toBe(true)
+    expect(Math.max(...path.map((point) => point[2])) - Math.min(...path.map((point) => point[2]))).toBeGreaterThan(0.01)
   })
 })

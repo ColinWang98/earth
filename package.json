@@ -6,7 +6,6 @@
   "scripts": {
     "dev": "vite",
     "test": "vitest run --exclude scripts/capture-paths.test.cjs",
-    "data:gaia": "node scripts/build-gaia-catalog.mjs",
     "data:small-bodies": "node scripts/build-small-bodies.mjs",
     "validate:horizons": "node scripts/validate-horizons.ts",
     "build": "tsc -b && vite build",

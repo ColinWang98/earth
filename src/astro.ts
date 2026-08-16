@@ -27,6 +27,11 @@ const BODY_DEFINITIONS: ReadonlyArray<Omit<CelestialBodyState, 'positionAu'> & {
   { id: 'neptune', label: '海王星', englishLabel: 'Neptune', color: '#4777d9', radiusKm: 24_622, astronomyBody: Body.Neptune },
 ]
 
+const ORBIT_PERIOD_DAYS: Record<Exclude<CelestialBodyId, 'sun' | 'moon'>, number> = {
+  mercury: 87.969, venus: 224.701, earth: 365.256, mars: 686.98,
+  jupiter: 4_332.59, saturn: 10_759.22, uranus: 30_688.5, neptune: 60_182,
+}
+
 export function clampSimulationTime(utcMs: number) {
   return Math.min(MAX_SIMULATION_TIME, Math.max(MIN_SIMULATION_TIME, utcMs))
 }
@@ -52,6 +57,15 @@ export function getSolarSystemSnapshot(utcMs: number): CelestialBodyState[] {
     else positionAu = body.id === 'earth' ? [...earthPosition] : eclipticPosition(astronomyBody!, date)
     return { ...body, positionAu }
   })
+}
+
+export function getPlanetOrbitPath(id: Exclude<CelestialBodyId, 'sun' | 'moon'>, utcMs: number, samples: number): [number, number, number][] {
+  const definition = BODY_DEFINITIONS.find((body) => body.id === id)
+  if (!definition?.astronomyBody) throw new Error(`No orbit is available for ${id}`)
+  const count = Math.max(8, Math.floor(samples))
+  const periodMs = ORBIT_PERIOD_DAYS[id] * 86_400_000
+  const startMs = utcMs - periodMs / 2
+  return Array.from({ length: count }, (_, index) => eclipticPosition(definition.astronomyBody!, new Date(startMs + periodMs * index / count)))
 }
 
 export function getEarthFixedSunDirection(utcMs: number): [number, number, number] {

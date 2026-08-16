@@ -1,333 +1,221 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import * as THREE from 'three'
-import { OrbitControls, Text } from '@react-three/drei'
+import { OrbitControls, Text, useGLTF } from '@react-three/drei'
 import { useFrame, useThree } from '@react-three/fiber'
 import type { OrbitControls as OrbitControlsImpl } from 'three-stdlib'
-import { getEarthFixedSunDirection, getSolarSystemSnapshot } from './astro'
+import * as THREE from 'three'
+import { getEarthFixedSunDirection, getPlanetOrbitPath, getSolarSystemSnapshot, type CelestialBodyId, type CelestialBodyState } from './astro'
+import { buildGibsWmsUrl, chooseEarthImagery, estimateImageCoverage } from './earthImagery'
+import { adaptiveFlightSpeed, autopilotDuration, compressedRenderDistance, movingAutopilotPosition, nearestBody, selectSpaceBand, type AuVector, type NavigationState, type SpaceBand } from './navigation'
+import { propagateKeplerOrbit, type KeplerOrbit } from './orbits'
 
 export const CAMERA_PRESETS = [
-  { id: 'orbit', label: '默认轨道', position: [0, 1.25, 9], earthRotation: 0, duration: 1.5 },
-  { id: 'sunlit', label: '日照侧环绕', position: [5.8, 2.5, 6.4], earthRotation: -0.65, duration: 2.2 },
-  { id: 'atmosphere', label: '贴近大气层', position: [0.2, 0.7, 3.08], earthRotation: 0.18, duration: 3.4 },
-  { id: 'clouds', label: '云层掠过', position: [2.6, 0.4, 2.8], earthRotation: 0.72, duration: 4.2 },
-  { id: 'china', label: '中国近景', position: [0.15, 0.38, 2.92], earthRotation: 2.75, duration: 4.1 },
+  { id: 'orbit', label: '默认轨道', position: [0, 1.25, 9], duration: 1.5 },
+  { id: 'sunlit', label: '日照侧环绕', position: [5.8, 2.5, 6.4], duration: 2.2 },
+  { id: 'atmosphere', label: '贴近大气层', position: [0.2, 0.7, 3.08], duration: 3.4 },
+  { id: 'clouds', label: '卫星云图', position: [2.6, 0.4, 2.8], duration: 4.2 },
+  { id: 'china', label: '东亚近景', position: [0.15, 0.38, 2.92], duration: 4.1 },
 ] as const
 
 export type CameraPresetId = typeof CAMERA_PRESETS[number]['id']
 type Quality = 'desktop' | 'mobile'
 type Motion = { active: boolean, target: THREE.Vector3, duration: number }
-type Props = {
-  annotations: boolean
-  forecastClouds: boolean
-  preset: CameraPresetId
-  quality: Quality
-  utcMs: number
-  onPresetChange: (preset: CameraPresetId) => void
-  onSkyReady: () => void
-  onCloudStatus: (status: string) => void
+
+export interface EarthObservationStatus {
+  source: string
+  label: string
+  date?: string
+  fallback: boolean
 }
 
+type Props = {
+  annotations: boolean
+  navigation: NavigationState
+  preset: CameraPresetId
+  quality: Quality
+  selectedObjectId?: string
+  showSmallBodies: boolean
+  utcMs: number
+  onNavigationChange: (state: NavigationState) => void
+  onObservationStatus: (status: EarthObservationStatus) => void
+  onPresetChange: (preset: CameraPresetId) => void
+  onSelect: (id: string) => void
+  onSkyReady: () => void
+}
+
+const AU_KM = 149_597_870.7
+const J2000_MS = Date.UTC(2000, 0, 1, 12)
 const DAY_MAP = `${import.meta.env.BASE_URL}assets/earth-blue-marble-5k.jpg`
 const NIGHT_MAP = `${import.meta.env.BASE_URL}assets/earth-night.png`
 const OCEAN_MASK = `${import.meta.env.BASE_URL}assets/earth-specular.jpg`
-const CLOUD_MAP = `${import.meta.env.BASE_URL}assets/earth-clouds-real.jpg`
-const CHINA_DETAIL_MAP = `${import.meta.env.BASE_URL}assets/east-asia-blue-marble-4k.jpg`
 const MOON_MAP = `${import.meta.env.BASE_URL}assets/moon.jpg`
+const SUN_MAP = `${import.meta.env.BASE_URL}assets/sun-real.jpg`
 const STAR_CATALOG = `${import.meta.env.BASE_URL}assets/stars/hyg-bright-stars.bin`
-const EARTH_RADIUS = 2.25
 
-function useTexture(url: string, quality: Quality, colorSpace: THREE.ColorSpace = THREE.SRGBColorSpace) {
-  return useMemo(() => {
-    const texture = new THREE.TextureLoader().load(url)
-    texture.colorSpace = colorSpace
-    texture.generateMipmaps = true
-    texture.minFilter = THREE.LinearMipmapLinearFilter
-    texture.anisotropy = quality === 'desktop' ? 8 : 3
-    return texture
-  }, [url, quality, colorSpace])
+const PLANET_VISUALS: Record<string, { color: string; texture?: string; tilt: number; periodDays: number; flattening?: number; atmosphere?: string; rings?: 'saturn' | 'uranus'; model?: string }> = {
+  mercury: { color: '#a7a39d', tilt: 0.034, periodDays: 58.646, model: `${import.meta.env.BASE_URL}assets/planets/mercury.glb` },
+  venus: { color: '#d49a45', texture: `${import.meta.env.BASE_URL}assets/planets/venus.webp`, tilt: 177.36, periodDays: -243.025, atmosphere: '#e8b45d' },
+  earth: { color: '#4b90d9', tilt: 23.44, periodDays: 0.99726968, flattening: 0.99665, atmosphere: '#3b92ff' },
+  moon: { color: '#cbc7bc', texture: MOON_MAP, tilt: 6.68, periodDays: 27.321661 },
+  mars: { color: '#bd5b36', texture: `${import.meta.env.BASE_URL}assets/planets/mars.webp`, tilt: 25.19, periodDays: 1.025957, flattening: 0.994, atmosphere: '#c56c4c' },
+  jupiter: { color: '#c79b72', texture: `${import.meta.env.BASE_URL}assets/planets/jupiter.webp`, tilt: 3.13, periodDays: 0.41354, flattening: 0.935, atmosphere: '#d6b28e' },
+  saturn: { color: '#d8c38d', texture: `${import.meta.env.BASE_URL}assets/planets/saturn.webp`, tilt: 26.73, periodDays: 0.444, flattening: 0.902, atmosphere: '#d7c38e', rings: 'saturn' },
+  uranus: { color: '#8bcdd4', tilt: 97.77, periodDays: -0.718, flattening: 0.977, atmosphere: '#8fdde7', rings: 'uranus', model: `${import.meta.env.BASE_URL}assets/planets/uranus.glb` },
+  neptune: { color: '#315fcb', texture: `${import.meta.env.BASE_URL}assets/planets/neptune.webp`, tilt: 28.32, periodDays: 0.6713, flattening: 0.983, atmosphere: '#346be8' },
 }
 
-function useLazyTexture(url: string, active: boolean, quality: Quality) {
-  const [texture, setTexture] = useState<THREE.Texture | null>(null)
-  useEffect(() => {
-    if (!active || texture) return
-    const loader = new THREE.TextureLoader()
-    loader.load(url, (nextTexture) => {
-      nextTexture.colorSpace = THREE.SRGBColorSpace
-      nextTexture.generateMipmaps = true
-      nextTexture.minFilter = THREE.LinearMipmapLinearFilter
-      nextTexture.anisotropy = quality === 'desktop' ? 8 : 3
-      setTexture(nextTexture)
-    })
-  }, [active, quality, texture, url])
-  useEffect(() => () => texture?.dispose(), [texture])
+function useTexture(url: string, quality: Quality, colorSpace: THREE.ColorSpace = THREE.SRGBColorSpace) {
+  const texture = useMemo(() => {
+    const next = new THREE.TextureLoader().load(url)
+    next.colorSpace = colorSpace
+    next.generateMipmaps = true
+    next.minFilter = THREE.LinearMipmapLinearFilter
+    next.anisotropy = quality === 'desktop' ? 8 : 3
+    return next
+  }, [url, quality, colorSpace])
+  useEffect(() => () => texture.dispose(), [texture])
   return texture
 }
 
-function Atmosphere({ segments, sunDirection }: { segments: number, sunDirection: THREE.Vector3 }) {
-  return <mesh renderOrder={4}>
-    <sphereGeometry args={[2.305, segments, segments]} />
-    <shaderMaterial transparent depthWrite={false} side={THREE.BackSide} blending={THREE.AdditiveBlending} uniforms={{ sunDirection: { value: sunDirection } }} vertexShader={`
-      varying vec3 vWorldNormal; varying vec3 vWorldPosition;
-      void main() {
-        vWorldNormal = normalize(mat3(modelMatrix) * normal);
-        vWorldPosition = (modelMatrix * vec4(position, 1.0)).xyz;
-        gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
-      }
-    `} fragmentShader={`
-      uniform vec3 sunDirection; varying vec3 vWorldNormal; varying vec3 vWorldPosition;
-      void main() {
-        vec3 viewDirection = normalize(cameraPosition - vWorldPosition);
-        vec3 sunlight = normalize(sunDirection);
-        float horizon = pow(1.0 - max(dot(vWorldNormal, viewDirection), 0.0), 4.6);
-        float daylight = smoothstep(-0.15, 0.85, dot(vWorldNormal, sunlight));
-        vec3 color = mix(vec3(0.015, 0.055, 0.16), vec3(0.11, 0.43, 1.0), daylight);
-        gl_FragColor = vec4(color, horizon * (0.018 + daylight * 0.14));
-      }
-    `} />
-  </mesh>
+function loadImage(url: string) {
+  return new Promise<HTMLImageElement>((resolve, reject) => {
+    const image = new Image()
+    image.crossOrigin = 'anonymous'
+    image.onload = () => resolve(image)
+    image.onerror = () => reject(new Error(`Unable to load ${url}`))
+    image.src = url
+  })
 }
 
-function Aurora({ segments, sunDirection }: { segments: number, sunDirection: THREE.Vector3 }) {
-  const material = useRef<THREE.ShaderMaterial>(null)
-  useFrame((_, delta) => { if (material.current) material.current.uniforms.time.value += delta })
-  return <mesh renderOrder={5}>
-    <sphereGeometry args={[2.33, segments, segments]} />
-    <shaderMaterial ref={material} transparent depthWrite={false} blending={THREE.AdditiveBlending} uniforms={{ time: { value: 0 }, sunDirection: { value: sunDirection } }} vertexShader={`
-      varying vec3 vWorldNormal; varying vec3 vWorldPosition;
-      void main() {
-        vWorldNormal = normalize(mat3(modelMatrix) * normal);
-        vWorldPosition = (modelMatrix * vec4(position, 1.0)).xyz;
-        gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
-      }
-    `} fragmentShader={`
-      uniform float time; uniform vec3 sunDirection; varying vec3 vWorldNormal; varying vec3 vWorldPosition;
-      void main() {
-        vec3 sun = normalize(sunDirection);
-        vec3 viewDirection = normalize(cameraPosition - vWorldPosition);
-        float polar = abs(vWorldNormal.y);
-        float nightSide = pow(1.0 - smoothstep(-0.08, 0.34, dot(vWorldNormal, sun)), 1.08);
-        float limb = pow(1.0 - max(dot(vWorldNormal, viewDirection), 0.0), 1.42);
-        float longitude = atan(vWorldNormal.z, vWorldNormal.x);
-        float waviness = 0.045 * sin(longitude * 3.0 + time * 0.12) + 0.025 * sin(longitude * 11.0 - time * 0.20);
-        float belt = 1.0 - smoothstep(0.035, 0.13, abs(polar - (0.53 + waviness)));
-        float streaks = 0.5 + 0.5 * sin(longitude * 15.0 + polar * 19.0 + time * 0.30);
-        float gaps = smoothstep(0.51, 0.80, 0.5 + 0.5 * sin(longitude * 4.7 + sin(longitude * 1.8) * 2.0));
-        float strands = mix(0.18, 1.0, pow(streaks, 2.5));
-        float distanceFade = 1.0 - smoothstep(4.0, 6.6, length(cameraPosition));
-        float alpha = belt * gaps * strands * nightSide * limb * distanceFade * 0.34;
-        float redFringe = smoothstep(0.58, 0.74, polar) * gaps * 0.22;
-        vec3 green = vec3(0.02, 0.78, 0.39);
-        vec3 color = mix(green, vec3(0.72, 0.08, 0.20), redFringe);
-        gl_FragColor = vec4(color, alpha);
-      }
-    `} />
-  </mesh>
+async function probeCoverage(layer: string, date: string) {
+  const image = await loadImage(buildGibsWmsUrl(layer, date, 256, 128))
+  const canvas = document.createElement('canvas')
+  canvas.width = 256
+  canvas.height = 128
+  const context = canvas.getContext('2d', { willReadFrequently: true })
+  if (!context) return 0
+  context.drawImage(image, 0, 0, 256, 128)
+  return estimateImageCoverage(context.getImageData(0, 0, 256, 128).data)
 }
 
-const CLOUD_LONGITUDE_STEPS = 18
-const CLOUD_LATITUDE_STEPS = 9
+function useEarthObservationTexture(utcMs: number, quality: Quality, onStatus: (status: EarthObservationStatus) => void) {
+  const fallback = useTexture(DAY_MAP, quality)
+  const [texture, setTexture] = useState<THREE.Texture>(fallback)
+  const owned = useRef<THREE.Texture | null>(null)
+  const imageryDay = new Date(utcMs).toISOString().slice(0, 10)
 
-function cloudCoordinates() {
-  const latitudes: number[] = []
-  const longitudes: number[] = []
-  for (let row = 0; row < CLOUD_LATITUDE_STEPS; row += 1) {
-    const latitude = 80 - row * (160 / (CLOUD_LATITUDE_STEPS - 1))
-    for (let column = 0; column < CLOUD_LONGITUDE_STEPS; column += 1) {
-      latitudes.push(latitude)
-      longitudes.push(-180 + column * (360 / CLOUD_LONGITUDE_STEPS))
-    }
-  }
-  return { latitudes, longitudes }
-}
-
-function useForecastCloudMask(enabled: boolean, onStatus: (status: string) => void) {
-  const [texture, setTexture] = useState<THREE.CanvasTexture | null>(null)
   useEffect(() => {
-    if (!enabled) {
-      setTexture(null)
-      onStatus('静态卫星云层 · 三层细节')
-      return
-    }
     let cancelled = false
-    let timer: number | undefined
-    let activeTexture: THREE.CanvasTexture | null = null
+    let retireTimer: number | undefined
+    const width = quality === 'desktop' ? 4096 : 2048
+    const height = quality === 'desktop' ? 2048 : 1024
+    const choice = chooseEarthImagery(Date.parse(`${imageryDay}T12:00:00.000Z`))
+    const useFallback = (label: string) => {
+      if (cancelled) return
+      setTexture(fallback)
+      onStatus({ source: 'NASA Blue Marble', label, fallback: true })
+    }
     const load = async () => {
-      onStatus('正在获取全球预报云量…')
+      if (choice.kind === 'fallback') {
+        useFallback(choice.reason === 'future-date' ? '未来日期无卫星观测 · 使用 Blue Marble' : '卫星时代之前 · 使用 Blue Marble')
+        return
+      }
+      onStatus({ source: 'NASA GIBS', label: choice.kind === 'recent' ? '正在寻找最新完整卫星观测…' : `正在加载 ${choice.date} 卫星观测…`, fallback: false })
       try {
-        const { latitudes, longitudes } = cloudCoordinates()
-        const params = new URLSearchParams({
-          latitude: latitudes.join(','), longitude: longitudes.join(','),
-          current: 'cloud_cover,cloud_cover_low,cloud_cover_mid,cloud_cover_high', forecast_days: '1', timezone: 'GMT',
-        })
-        const response = await fetch(`https://api.open-meteo.com/v1/forecast?${params}`)
-        if (!response.ok) throw new Error('Cloud forecast unavailable')
-        const readings = await response.json() as Array<{ current?: { cloud_cover?: number, cloud_cover_low?: number, cloud_cover_mid?: number, cloud_cover_high?: number } }>
-        if (cancelled || !Array.isArray(readings)) return
-        const canvas = document.createElement('canvas')
-        canvas.width = CLOUD_LONGITUDE_STEPS
-        canvas.height = CLOUD_LATITUDE_STEPS
-        const context = canvas.getContext('2d')
-        if (!context) throw new Error('Canvas unavailable')
-        const image = context.createImageData(canvas.width, canvas.height)
-        readings.forEach(({ current }, index) => {
-          const total = THREE.MathUtils.clamp((current?.cloud_cover ?? 0) / 100, 0, 1)
-          const layered = THREE.MathUtils.clamp(((current?.cloud_cover_low ?? 0) * 0.52 + (current?.cloud_cover_mid ?? 0) * 0.3 + (current?.cloud_cover_high ?? 0) * 0.18) / 100, 0, 1)
-          const value = Math.round(THREE.MathUtils.smoothstep(total * 0.72 + layered * 0.28, 0.16, 0.86) * 255)
-          image.data.set([value, value, value, 255], index * 4)
-        })
-        context.putImageData(image, 0, 0)
-        const nextTexture = new THREE.CanvasTexture(canvas)
-        nextTexture.colorSpace = THREE.NoColorSpace
-        nextTexture.wrapS = THREE.RepeatWrapping
-        nextTexture.minFilter = THREE.LinearFilter
-        nextTexture.magFilter = THREE.LinearFilter
-        activeTexture?.dispose()
-        activeTexture = nextTexture
-        setTexture(nextTexture)
-        onStatus('预报云层 · Open‑Meteo · 每 45 分钟更新')
+        let date: string | undefined
+        if (choice.kind === 'recent') {
+          for (const candidate of choice.dates) {
+            if (await probeCoverage(choice.layer, candidate) >= 0.55) { date = candidate; break }
+          }
+        } else if (await probeCoverage(choice.layer, choice.date) >= 0.08) date = choice.date
+        if (!date) throw new Error('No useful coverage')
+        const image = await loadImage(buildGibsWmsUrl(choice.layer, date, width, height))
+        if (cancelled) return
+        const next = new THREE.Texture(image)
+        next.colorSpace = THREE.SRGBColorSpace
+        next.generateMipmaps = true
+        next.minFilter = THREE.LinearMipmapLinearFilter
+        next.anisotropy = quality === 'desktop' ? 8 : 3
+        next.needsUpdate = true
+        const previous = owned.current
+        owned.current = next
+        setTexture(next)
+        const delayHours = Math.max(0, (Date.now() - Date.parse(`${date}T12:00:00.000Z`)) / 3_600_000)
+        onStatus({ source: choice.layer.startsWith('VIIRS') ? 'NASA GIBS · VIIRS/Suomi NPP' : 'NASA GIBS · MODIS/Terra', label: choice.kind === 'recent' ? `${date} 近实时卫星真彩 · 约 ${Math.round(delayHours)} 小时延迟` : `${date} 历史卫星真彩`, date, fallback: false })
+        if (previous) retireTimer = window.setTimeout(() => previous.dispose(), 1_500)
       } catch {
-        if (!cancelled) onStatus('预报云层暂不可用 · 已保留三层静态云')
+        useFallback('NASA GIBS 暂不可用 · 使用 Blue Marble')
       }
     }
     void load()
-    timer = window.setInterval(() => void load(), 45 * 60 * 1000)
-    return () => { cancelled = true; if (timer) window.clearInterval(timer); activeTexture?.dispose() }
-  }, [enabled, onStatus])
+    return () => { cancelled = true; if (retireTimer) window.clearTimeout(retireTimer) }
+  }, [fallback, imageryDay, onStatus, quality])
+
+  useEffect(() => () => owned.current?.dispose(), [])
   return texture
 }
 
-function CloudLayer({ cloudMap, forecastMask, radius, density, speed, offset, segments, sunDirection }: { cloudMap: THREE.Texture, forecastMask: THREE.Texture | null, radius: number, density: number, speed: number, offset: number, segments: number, sunDirection: THREE.Vector3 }) {
-  const material = useRef<THREE.ShaderMaterial>(null)
-  const fallbackMask = useMemo(() => new THREE.DataTexture(new Uint8Array([255]), 1, 1, THREE.RedFormat), [])
-  useEffect(() => () => fallbackMask.dispose(), [fallbackMask])
-  useFrame((_, delta) => { if (material.current) material.current.uniforms.time.value += delta * speed })
-  return <mesh renderOrder={3}>
+function Atmosphere({ radius, segments, color = '#3b92ff' }: { radius: number; segments: number; color?: string }) {
+  return <mesh renderOrder={4} scale={1.025}>
     <sphereGeometry args={[radius, segments, segments]} />
-    <shaderMaterial ref={material} transparent depthWrite={false} uniforms={{ cloudMap: { value: cloudMap }, forecastMask: { value: forecastMask ?? fallbackMask }, time: { value: offset }, density: { value: density }, usesForecast: { value: forecastMask ? 1 : 0 }, sunDirection: { value: sunDirection } }} vertexShader={`
-      varying vec2 vUv; varying vec3 vWorldNormal;
-      void main() { vUv = uv; vWorldNormal = normalize(mat3(modelMatrix) * normal); gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }
-    `} fragmentShader={`
-      uniform sampler2D cloudMap; uniform sampler2D forecastMask; uniform float time; uniform float density; uniform float usesForecast; uniform vec3 sunDirection;
-      varying vec2 vUv; varying vec3 vWorldNormal;
-      void main() {
-        vec2 cloudUv = vec2(fract(vUv.x + time), vUv.y);
-        float cloud = texture2D(cloudMap, cloudUv).r;
-        float regional = texture2D(forecastMask, vUv).r;
-        float shape = smoothstep(0.28, 0.8, cloud);
-        float alpha = shape * density * mix(1.0, regional, usesForecast);
-        float daylight = smoothstep(-0.16, 0.24, dot(vWorldNormal, normalize(sunDirection)));
-        vec3 color = mix(vec3(0.02, 0.026, 0.04), vec3(0.82, 0.85, 0.87), daylight);
-        gl_FragColor = vec4(color, alpha * mix(0.10, 0.60, daylight));
-      }
-    `} />
+    <meshBasicMaterial color={color} transparent opacity={0.11} depthWrite={false} side={THREE.BackSide} blending={THREE.AdditiveBlending} />
   </mesh>
 }
 
-function EarthSurface({ dayMap, nightMap, oceanMask, segments, sunDirection }: { dayMap: THREE.Texture, nightMap: THREE.Texture, oceanMask: THREE.Texture, segments: number, sunDirection: THREE.Vector3 }) {
-  return <mesh castShadow receiveShadow>
-    <sphereGeometry args={[EARTH_RADIUS, segments, segments]} />
-    <shaderMaterial uniforms={{ dayMap: { value: dayMap }, nightMap: { value: nightMap }, oceanMask: { value: oceanMask }, sunDirection: { value: sunDirection } }} vertexShader={`
-      varying vec2 vUv; varying vec3 vWorldNormal; varying vec3 vWorldPosition;
-      void main() {
-        vUv = uv;
-        vWorldNormal = normalize(mat3(modelMatrix) * normal);
-        vWorldPosition = (modelMatrix * vec4(position, 1.0)).xyz;
-        gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
-      }
-    `} fragmentShader={`
-      uniform sampler2D dayMap; uniform sampler2D nightMap; uniform sampler2D oceanMask; uniform vec3 sunDirection;
-      varying vec2 vUv; varying vec3 vWorldNormal; varying vec3 vWorldPosition;
-      void main() {
-        vec3 sunlight = normalize(sunDirection);
-        float illumination = dot(vWorldNormal, sunlight);
-        float daylight = smoothstep(-0.16, 0.24, illumination);
-        vec3 day = pow(texture2D(dayMap, vUv).rgb, vec3(0.86)) * 1.38;
-        vec3 night = pow(texture2D(nightMap, vUv).rgb, vec3(0.58));
-        float ocean = texture2D(oceanMask, vUv).r;
-        vec3 surface = day * mix(0.02, 1.0, daylight);
-        surface += vec3(0.012, 0.055, 0.105) * ocean * daylight;
-        float nightSide = pow(1.0 - daylight, 1.35);
-        surface += day * vec3(0.010, 0.020, 0.040) * nightSide;
-        surface += night * 0.46 * nightSide;
-        gl_FragColor = vec4(surface, 1.0);
-      }
-    `} />
-  </mesh>
-}
-
-function ChinaDetail({ map, active, quality, sunDirection }: { map: THREE.Texture | null, active: boolean, quality: Quality, sunDirection: THREE.Vector3 }) {
+function EarthSurface({ dayMap, nightMap, oceanMask, radius, segments, sunDirection }: { dayMap: THREE.Texture; nightMap: THREE.Texture; oceanMask: THREE.Texture; radius: number; segments: number; sunDirection: THREE.Vector3 }) {
   const material = useRef<THREE.ShaderMaterial>(null)
-  const opacity = useRef(0)
+  const current = useRef(dayMap)
+  const blend = useRef(1)
+  useEffect(() => {
+    if (!material.current || current.current === dayMap) return
+    material.current.uniforms.dayMapA.value = current.current
+    material.current.uniforms.dayMapB.value = dayMap
+    current.current = dayMap
+    blend.current = 0
+  }, [dayMap])
   useFrame((_, delta) => {
-    opacity.current = THREE.MathUtils.damp(opacity.current, active && map ? 1 : 0, 2.6, delta)
-    if (material.current) material.current.uniforms.opacity.value = opacity.current
+    blend.current = Math.min(1, blend.current + delta * 0.75)
+    if (material.current) {
+      material.current.uniforms.dayMix.value = THREE.MathUtils.smoothstep(blend.current, 0, 1)
+      material.current.uniforms.sunDirection.value.copy(sunDirection)
+    }
   })
-  if (!map) return null
-  const segments = quality === 'desktop' ? 96 : 56
-  return <mesh renderOrder={2}>
-    <sphereGeometry args={[EARTH_RADIUS + 0.003, segments, segments, Math.PI * 1.5, Math.PI * 0.25, Math.PI * 0.195, Math.PI * 0.222]} />
-    <shaderMaterial ref={material} transparent depthWrite={false} uniforms={{ detailMap: { value: map }, opacity: { value: 0 }, sunDirection: { value: sunDirection } }} vertexShader={`
-      varying vec2 vUv; varying vec3 vWorldNormal;
-      void main() { vUv = uv; vWorldNormal = normalize(mat3(modelMatrix) * normal); gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }
+  return <mesh>
+    <sphereGeometry args={[radius, segments, segments]} />
+    <shaderMaterial ref={material} uniforms={{ dayMapA: { value: dayMap }, dayMapB: { value: dayMap }, dayMix: { value: 1 }, nightMap: { value: nightMap }, oceanMask: { value: oceanMask }, sunDirection: { value: sunDirection } }} vertexShader={`
+      varying vec2 vUv; varying vec3 vNormal;
+      void main(){ vUv=uv; vNormal=normalize(mat3(modelMatrix)*normal); gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0); }
     `} fragmentShader={`
-      uniform sampler2D detailMap; uniform float opacity; uniform vec3 sunDirection;
-      varying vec2 vUv; varying vec3 vWorldNormal;
-      void main() {
-        float daylight = smoothstep(-0.16, 0.24, dot(vWorldNormal, normalize(sunDirection)));
-        float edge = smoothstep(0.0, 0.07, vUv.x) * smoothstep(0.0, 0.07, 1.0 - vUv.x) * smoothstep(0.0, 0.09, vUv.y) * smoothstep(0.0, 0.09, 1.0 - vUv.y);
-        vec3 detail = pow(texture2D(detailMap, vUv).rgb, vec3(0.58)) * vec3(1.12, 1.18, 1.25);
-        float localExposure = mix(0.38, 1.0, daylight);
-        gl_FragColor = vec4(detail * localExposure, edge * opacity * localExposure);
+      uniform sampler2D dayMapA; uniform sampler2D dayMapB; uniform sampler2D nightMap; uniform sampler2D oceanMask;
+      uniform float dayMix; uniform vec3 sunDirection; varying vec2 vUv; varying vec3 vNormal;
+      void main(){
+        float lightDot=dot(normalize(vNormal),normalize(sunDirection));
+        float daylight=smoothstep(-0.18,0.22,lightDot);
+        vec3 day=mix(texture2D(dayMapA,vUv).rgb,texture2D(dayMapB,vUv).rgb,dayMix);
+        vec3 night=texture2D(nightMap,vUv).rgb;
+        float ocean=texture2D(oceanMask,vUv).r;
+        vec3 lit=day*(0.18+0.92*max(lightDot,0.0));
+        lit+=vec3(0.05,0.12,0.22)*pow(max(lightDot,0.0),22.0)*ocean;
+        gl_FragColor=vec4(mix(night*0.65,lit,daylight),1.0);
       }
     `} />
   </mesh>
 }
 
-function Earth({ preset, forecastClouds, onCloudStatus, quality, sunDirection }: { preset: CameraPresetId, forecastClouds: boolean, onCloudStatus: (status: string) => void, quality: Quality, sunDirection: THREE.Vector3 }) {
-  const earth = useRef<THREE.Group>(null)
-  const day = useTexture(DAY_MAP, quality)
+function EarthGlobe({ dayMap, quality, radius, sunDirection }: { dayMap: THREE.Texture; quality: Quality; radius: number; sunDirection: THREE.Vector3 }) {
   const night = useTexture(NIGHT_MAP, quality)
-  const oceanMask = useTexture(OCEAN_MASK, quality, THREE.NoColorSpace)
-  const cloud = useTexture(CLOUD_MAP, quality, THREE.NoColorSpace)
-  const chinaDetail = useLazyTexture(CHINA_DETAIL_MAP, true, quality)
-  const forecastMask = useForecastCloudMask(forecastClouds, onCloudStatus)
-  const item = CAMERA_PRESETS.find((entry) => entry.id === preset) ?? CAMERA_PRESETS[0]
-  const segments = quality === 'desktop' ? 160 : 96
-  const cloudCoverage = preset === 'china' ? 0.48 : 1
-  useFrame((_, delta) => { if (earth.current) earth.current.rotation.y = THREE.MathUtils.damp(earth.current.rotation.y, item.earthRotation, 3 / item.duration, delta) })
-  return <group ref={earth}>
-    <EarthSurface dayMap={day} nightMap={night} oceanMask={oceanMask} segments={segments} sunDirection={sunDirection} />
-    <ChinaDetail map={chinaDetail} active={preset === 'china'} quality={quality} sunDirection={sunDirection} />
-    <CloudLayer cloudMap={cloud} forecastMask={forecastMask} radius={2.274} density={0.28 * cloudCoverage} speed={0.0017} offset={0} segments={segments} sunDirection={sunDirection} />
-    <CloudLayer cloudMap={cloud} forecastMask={forecastMask} radius={2.287} density={0.085 * cloudCoverage} speed={-0.0009} offset={0.19} segments={segments} sunDirection={sunDirection} />
-    <CloudLayer cloudMap={cloud} forecastMask={forecastMask} radius={2.303} density={0.035 * cloudCoverage} speed={0.00045} offset={0.47} segments={segments} sunDirection={sunDirection} />
-    <Atmosphere segments={segments} sunDirection={sunDirection} />
-    <Aurora segments={segments} sunDirection={sunDirection} />
+  const ocean = useTexture(OCEAN_MASK, quality, THREE.NoColorSpace)
+  const segments = quality === 'desktop' ? 128 : 72
+  return <group>
+    <EarthSurface dayMap={dayMap} nightMap={night} oceanMask={ocean} radius={radius} segments={segments} sunDirection={sunDirection} />
+    <Atmosphere radius={radius} segments={segments} />
   </group>
 }
 
-function Moon({ quality, position }: { quality: Quality, position: [number, number, number] }) {
-  const moon = useRef<THREE.Mesh>(null)
-  const map = useTexture(MOON_MAP, quality)
-  useFrame((_, delta) => { if (moon.current) moon.current.rotation.y += delta * 0.01 })
-  return <mesh ref={moon} position={position}><sphereGeometry args={[0.58, quality === 'desktop' ? 64 : 40, quality === 'desktop' ? 64 : 40]} /><meshStandardMaterial map={map} roughness={1} /></mesh>
-}
-
-function starColor(index: number, target: THREE.Color) {
-  if (index < 0.1) return target.set('#9fbcff')
-  if (index < 0.55) return target.lerpColors(new THREE.Color('#c8d8ff'), new THREE.Color('#fff7e4'), (index - 0.1) / 0.45)
-  if (index < 1.25) return target.lerpColors(new THREE.Color('#fff7e4'), new THREE.Color('#ffd19a'), (index - 0.55) / 0.7)
-  return target.set('#ffb16f')
-}
-
-function StarCatalog({ onReady, quality }: { onReady: () => void, quality: Quality }) {
+function StarCatalog({ onReady, quality }: { onReady: () => void; quality: Quality }) {
   const [geometry, setGeometry] = useState<THREE.BufferGeometry | null>(null)
-  const material = useRef<THREE.PointsMaterial>(null)
-  const { camera } = useThree()
   useEffect(() => {
     let disposed = false
-    let nextGeometry: THREE.BufferGeometry | null = null
+    let next: THREE.BufferGeometry | null = null
     fetch(STAR_CATALOG).then((response) => response.arrayBuffer()).then((buffer) => {
       if (disposed) return
       const source = new Float32Array(buffer)
@@ -336,68 +224,26 @@ function StarCatalog({ onReady, quality }: { onReady: () => void, quality: Quali
       const colors = new Float32Array(count * 3)
       const color = new THREE.Color()
       for (let index = 0; index < count; index += 1) {
-        positions.set([source[index * 5] * 170, source[index * 5 + 1] * 170, source[index * 5 + 2] * 170], index * 3)
-        starColor(source[index * 5 + 3], color)
-        colors.set([color.r, color.g, color.b], index * 3)
+        positions.set([source[index * 5] * 260, source[index * 5 + 1] * 260, source[index * 5 + 2] * 260], index * 3)
+        const bv = source[index * 5 + 3]
+        color.set(bv < 0.2 ? '#a9c5ff' : bv < 0.8 ? '#fff3db' : '#ffbd82')
+        colors.set(color.toArray(), index * 3)
       }
-      nextGeometry = new THREE.BufferGeometry()
-      nextGeometry.setAttribute('position', new THREE.BufferAttribute(positions, 3))
-      nextGeometry.setAttribute('color', new THREE.BufferAttribute(colors, 3))
-      setGeometry(nextGeometry)
+      next = new THREE.BufferGeometry()
+      next.setAttribute('position', new THREE.BufferAttribute(positions, 3))
+      next.setAttribute('color', new THREE.BufferAttribute(colors, 3))
+      setGeometry(next)
       onReady()
     })
-    return () => { disposed = true; nextGeometry?.dispose() }
+    return () => { disposed = true; next?.dispose() }
   }, [onReady, quality])
-  useFrame(() => { if (material.current) material.current.opacity = THREE.MathUtils.clamp((camera.position.length() - 2.6) / 12, 0.22, 0.62) })
   if (!geometry) return null
-  return <points geometry={geometry} frustumCulled={false}><pointsMaterial ref={material} size={quality === 'desktop' ? 0.95 : 0.78} sizeAttenuation={false} vertexColors transparent opacity={0.5} depthWrite={false} depthTest /></points>
+  return <points geometry={geometry} frustumCulled={false}><pointsMaterial size={quality === 'desktop' ? 0.95 : 0.78} sizeAttenuation={false} vertexColors transparent opacity={0.56} depthWrite={false} /></points>
 }
 
-function Annotations({ visible, moonPosition }: { visible: boolean, moonPosition: [number, number, number] }) {
-  if (!visible) return null
-  const labels = [
-    { position: [-1.9, -1.9, 0.7] as [number, number, number], title: '昼夜分界线', sub: 'Terminator line' },
-    { position: [moonPosition[0], moonPosition[1] + 0.9, moonPosition[2]] as [number, number, number], title: '月球', sub: 'Moon · enlarged view' },
-  ]
-  return <group>{labels.map(({ position, title, sub }) => <group key={title} position={position}>
-    <mesh position={[0, -0.12, 0]}><planeGeometry args={[1.76, 0.72]} /><meshBasicMaterial color="#07111d" transparent opacity={0.68} /></mesh>
-    <Text fontSize={0.16} color="#dbeeff" anchorX="center" position={[0, 0.11, 0.01]}>{title}</Text>
-    <Text fontSize={0.09} color="#7da9c8" anchorX="center" position={[0, -0.13, 0.01]}>{sub}</Text>
-  </group>)}</group>
-}
-
-function presetOrbit(preset: CameraPresetId) {
-  const [x, y, z] = (CAMERA_PRESETS.find((item) => item.id === preset) ?? CAMERA_PRESETS[0]).position
-  const distance = Math.hypot(x, y, z)
-  return { distance, theta: Math.atan2(-x, -z), phi: Math.asin(THREE.MathUtils.clamp((0.25 - y) / distance, -0.75, 0.75)) }
-}
-
-function XRMovement({ preset, forecastClouds, onCloudStatus, quality, sunDirection, moonPosition }: { preset: CameraPresetId, forecastClouds: boolean, onCloudStatus: (status: string) => void, quality: Quality, sunDirection: THREE.Vector3, moonPosition: [number, number, number] }) {
-  const world = useRef<THREE.Group>(null)
-  const { gl } = useThree()
-  const orbit = useRef({ ...presetOrbit('orbit'), active: false })
-  useEffect(() => { Object.assign(orbit.current, presetOrbit(preset), { active: true }) }, [preset])
-  useFrame((_, delta) => {
-    const session = gl.xr.getSession()
-    if (!session || !world.current) return
-    for (const source of session.inputSources) {
-      const axes = source.gamepad?.axes
-      if (!axes || !source.handedness) continue
-      if (Math.abs(axes[2]) > 0.12 || Math.abs(axes[3]) > 0.12) orbit.current.active = false
-      if (source.handedness === 'left') {
-        orbit.current.theta -= axes[2] * delta * 1.1
-        orbit.current.phi = THREE.MathUtils.clamp(orbit.current.phi + axes[3] * delta * 0.65, -0.45, 0.55)
-      }
-      if (source.handedness === 'right') orbit.current.distance = THREE.MathUtils.clamp(orbit.current.distance + axes[3] * delta * 2.1, 2.72, 15)
-    }
-    const { theta, phi, distance } = orbit.current
-    world.current.position.set(-Math.sin(theta) * Math.cos(phi) * distance, -Math.sin(phi) * distance + 0.25, -Math.cos(theta) * Math.cos(phi) * distance)
-  })
-  return <group ref={world}><Earth preset={preset} forecastClouds={forecastClouds} onCloudStatus={onCloudStatus} quality={quality} sunDirection={sunDirection} /><Moon quality={quality} position={moonPosition} /></group>
-}
-
-function CameraDirector({ preset, controls, motion }: { preset: CameraPresetId, controls: React.RefObject<OrbitControlsImpl | null>, motion: React.MutableRefObject<Motion> }) {
+function CameraDirector({ preset, controls, motion }: { preset: CameraPresetId; controls: React.RefObject<OrbitControlsImpl | null>; motion: React.MutableRefObject<Motion> }) {
   const { camera, gl } = useThree()
+  const origin = useMemo(() => new THREE.Vector3(), [])
   useEffect(() => {
     const item = CAMERA_PRESETS.find((entry) => entry.id === preset) ?? CAMERA_PRESETS[0]
     motion.current = { active: true, target: new THREE.Vector3(...item.position), duration: item.duration }
@@ -406,23 +252,310 @@ function CameraDirector({ preset, controls, motion }: { preset: CameraPresetId, 
     if (gl.xr.isPresenting || !motion.current.active) return
     const blend = 1 - Math.exp(-delta * 4 / motion.current.duration)
     camera.position.lerp(motion.current.target, blend)
-    controls.current?.target.lerp(new THREE.Vector3(0, 0, 0), blend)
+    controls.current?.target.lerp(origin, blend)
     controls.current?.update()
     if (camera.position.distanceTo(motion.current.target) < 0.015) motion.current.active = false
   })
   return null
 }
 
-function CaptureCamera() {
-  const { camera } = useThree()
+function OrbitEarth({ annotations, dayMap, preset, quality, sunDirection, utcMs }: { annotations: boolean; dayMap: THREE.Texture; preset: CameraPresetId; quality: Quality; sunDirection: THREE.Vector3; utcMs: number }) {
+  const controls = useRef<OrbitControlsImpl | null>(null)
+  const motion = useRef<Motion>({ active: false, target: new THREE.Vector3(...CAMERA_PRESETS[0].position), duration: 1.5 })
+  const moonMap = useTexture(MOON_MAP, quality)
+  const moonPosition = useMemo(() => {
+    const snapshot = getSolarSystemSnapshot(utcMs)
+    const earth = snapshot.find((body) => body.id === 'earth')!
+    const moon = snapshot.find((body) => body.id === 'moon')!
+    return new THREE.Vector3(moon.positionAu[0] - earth.positionAu[0], moon.positionAu[2] - earth.positionAu[2], earth.positionAu[1] - moon.positionAu[1]).normalize().multiplyScalar(28.3)
+  }, [utcMs])
+  return <>
+    <EarthGlobe dayMap={dayMap} quality={quality} radius={2.25} sunDirection={sunDirection} />
+    <mesh position={moonPosition}><sphereGeometry args={[0.58, quality === 'desktop' ? 64 : 36, quality === 'desktop' ? 64 : 36]} /><meshStandardMaterial map={moonMap} roughness={1} /></mesh>
+    {annotations && <><Text position={[0, 2.75, 0]} fontSize={0.18} color="#d9efff">NASA 近实时真彩地球</Text><Text position={[moonPosition.x, moonPosition.y + 0.9, moonPosition.z]} fontSize={0.16} color="#d9efff">月球 · 展示距离</Text></>}
+    <CameraDirector preset={preset} controls={controls} motion={motion} />
+    <OrbitControls ref={controls} enableDamping dampingFactor={0.06} minDistance={2.72} maxDistance={15} target={[0, 0, 0]} onStart={() => { motion.current.active = false }} />
+  </>
+}
+
+function NasaModel({ url }: { url: string }) {
+  const { scene } = useGLTF(url)
+  const clone = useMemo(() => scene.clone(true), [scene])
+  const scale = useMemo(() => {
+    const size = new THREE.Box3().setFromObject(clone).getSize(new THREE.Vector3())
+    return 2 / Math.max(size.x, size.y, size.z, 0.0001)
+  }, [clone])
+  return <primitive object={clone} scale={scale} />
+}
+
+function RingSystem({ kind }: { kind: 'saturn' | 'uranus' }) {
+  const inner = kind === 'saturn' ? 1.28 : 1.45
+  const outer = kind === 'saturn' ? 2.3 : 1.95
+  return <mesh rotation={[Math.PI / 2, 0, 0]} renderOrder={2}>
+    <ringGeometry args={[inner, outer, 160]} />
+    <shaderMaterial transparent depthWrite={false} side={THREE.DoubleSide} uniforms={{ ringColor: { value: new THREE.Color(kind === 'saturn' ? '#d8c9a5' : '#6b8b91') }, opacity: { value: kind === 'saturn' ? 0.78 : 0.3 } }} vertexShader={`varying vec2 p; void main(){p=position.xy;gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0);}`} fragmentShader={`uniform vec3 ringColor; uniform float opacity; varying vec2 p; void main(){float r=length(p);float bands=0.45+0.55*sin(r*58.0)+0.2*sin(r*131.0);float edge=smoothstep(${inner.toFixed(2)},${(inner + 0.05).toFixed(2)},r)*(1.0-smoothstep(${(outer - 0.05).toFixed(2)},${outer.toFixed(2)},r));gl_FragColor=vec4(ringColor,edge*opacity*(0.5+0.35*bands));}`} />
+  </mesh>
+}
+
+function SunVisual({ detailed, quality }: { detailed: boolean; quality: Quality }) {
+  const map = useTexture(SUN_MAP, quality)
+  const material = useRef<THREE.ShaderMaterial>(null)
+  useFrame((_, delta) => { if (material.current) material.current.uniforms.time.value += delta })
+  return <group>
+    <mesh><sphereGeometry args={[1, detailed ? 72 : 28, detailed ? 56 : 20]} /><shaderMaterial ref={material} uniforms={{ map: { value: map }, time: { value: 0 } }} vertexShader={`varying vec2 vUv;varying vec3 n;void main(){vUv=uv;n=normal;gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0);}`} fragmentShader={`uniform sampler2D map;uniform float time;varying vec2 vUv;varying vec3 n;void main(){vec2 uv=vUv+vec2(time*0.002,0.004*sin(time*0.15+vUv.y*18.0));vec3 c=texture2D(map,uv).rgb;c*=1.35+0.16*sin(time+vUv.x*40.0);gl_FragColor=vec4(c,1.0);}`} /></mesh>
+    <mesh scale={1.18}><sphereGeometry args={[1, 32, 24]} /><meshBasicMaterial color="#ff9d42" transparent opacity={0.14} side={THREE.BackSide} blending={THREE.AdditiveBlending} depthWrite={false} /></mesh>
+  </group>
+}
+
+function TexturedPlanet({ body, quality, utcMs }: { body: CelestialBodyState; quality: Quality; utcMs: number }) {
+  const visual = PLANET_VISUALS[body.id]!
+  const map = useTexture(visual.texture ?? MOON_MAP, quality)
+  const rotation = visual ? (utcMs - J2000_MS) / 86_400_000 / visual.periodDays * Math.PI * 2 : 0
+  return <group rotation={[0, 0, THREE.MathUtils.degToRad(visual?.tilt ?? 0)]}>
+    <group rotation={[0, rotation, 0]} scale={[1, visual?.flattening ?? 1, 1]}>
+      {visual?.model ? <NasaModel url={visual.model} /> : <mesh><sphereGeometry args={[1, quality === 'desktop' ? 72 : 40, quality === 'desktop' ? 56 : 30]} /><meshStandardMaterial map={map} color={visual?.color ?? body.color} roughness={body.id === 'jupiter' || body.id === 'saturn' ? 0.78 : 0.94} /></mesh>}
+    </group>
+    {visual?.atmosphere && <Atmosphere radius={1} segments={quality === 'desktop' ? 64 : 32} color={visual.atmosphere} />}
+    {visual?.rings && <RingSystem kind={visual.rings} />}
+  </group>
+}
+
+function DetailedPlanet({ body, dayMap, quality, sunDirection, utcMs }: { body: CelestialBodyState; dayMap: THREE.Texture; quality: Quality; sunDirection: THREE.Vector3; utcMs: number }) {
+  if (body.id === 'earth') return <EarthGlobe dayMap={dayMap} quality={quality} radius={1} sunDirection={sunDirection} />
+  if (body.id === 'sun') return <SunVisual detailed quality={quality} />
+  return <TexturedPlanet body={body} quality={quality} utcMs={utcMs} />
+}
+
+function planetPosition(body: CelestialBodyState, observer: AuVector, band: SpaceBand, target: THREE.Vector3) {
+  const x = body.positionAu[0] - observer[0]
+  const y = body.positionAu[1] - observer[1]
+  const z = body.positionAu[2] - observer[2]
+  const distance = Math.hypot(x, y, z)
+  if (distance === 0) return target.set(0, 0, 0)
+  const worldScale = band === 'surface' ? 50_000 : band === 'orbital' ? 5_000 : 900
+  const renderedDistance = compressedRenderDistance(distance) * worldScale
+  return target.set(x, z, -y).normalize().multiplyScalar(renderedDistance)
+}
+
+const ORBIT_IDS: Exclude<CelestialBodyId, 'sun' | 'moon'>[] = ['mercury', 'venus', 'earth', 'mars', 'jupiter', 'saturn', 'uranus', 'neptune']
+
+function FloatingOrbit({ id, observer, band, quality, utcMs }: { id: Exclude<CelestialBodyId, 'sun' | 'moon'>; observer: React.MutableRefObject<AuVector>; band: SpaceBand; quality: Quality; utcMs: number }) {
+  const segments = quality === 'desktop' ? 128 : 72
+  const epoch = Math.floor(utcMs / (30 * 86_400_000)) * 30 * 86_400_000
+  const path = useMemo(() => getPlanetOrbitPath(id, epoch, segments), [epoch, id, segments])
+  const geometry = useMemo(() => {
+    const next = new THREE.BufferGeometry()
+    next.setAttribute('position', new THREE.BufferAttribute(new Float32Array(segments * 3), 3))
+    return next
+  }, [segments])
+  useEffect(() => () => geometry.dispose(), [geometry])
   useFrame(() => {
-    const position = (window as Window & { __EARTH_CAPTURE_CAMERA__?: [number, number, number] }).__EARTH_CAPTURE_CAMERA__
-    if (!position) return
-    camera.position.set(...position)
-    camera.lookAt(0, 0, 0)
-    camera.updateMatrixWorld()
+    const positions = geometry.getAttribute('position') as THREE.BufferAttribute
+    const worldScale = band === 'orbital' ? 5_000 : 900
+    for (let index = 0; index < path.length; index += 1) {
+      const x = path[index][0] - observer.current[0]
+      const y = path[index][1] - observer.current[1]
+      const z = path[index][2] - observer.current[2]
+      const distance = Math.hypot(x, y, z)
+      const renderDistance = compressedRenderDistance(distance) * worldScale
+      const inverse = distance > 0 ? renderDistance / distance : 0
+      positions.setXYZ(index, x * inverse, z * inverse, -y * inverse)
+    }
+    positions.needsUpdate = true
   })
-  return null
+  return <lineLoop geometry={geometry}><lineBasicMaterial color={id === 'earth' ? '#3c7196' : '#28445f'} transparent opacity={id === 'earth' ? 0.5 : 0.28} /></lineLoop>
+}
+
+function FloatingBody({ body, dayMap, observer, band, nearestId, quality, selected, sunDirection, utcMs, onSelect }: { body: CelestialBodyState; dayMap: THREE.Texture; observer: React.MutableRefObject<AuVector>; band: SpaceBand; nearestId: string; quality: Quality; selected: boolean; sunDirection: THREE.Vector3; utcMs: number; onSelect: (id: string) => void }) {
+  const group = useRef<THREE.Group>(null)
+  const visualGroup = useRef<THREE.Group>(null)
+  const labelGroup = useRef<THREE.Group>(null)
+  const target = useMemo(() => new THREE.Vector3(), [])
+  const detailed = selected || body.id === nearestId
+  useFrame(() => {
+    if (!group.current || !visualGroup.current) return
+    planetPosition(body, observer.current, band, target)
+    group.current.position.copy(target)
+    const distance = Math.hypot(body.positionAu[0] - observer.current[0], body.positionAu[1] - observer.current[1], body.positionAu[2] - observer.current[2])
+    const worldScale = band === 'surface' ? 50_000 : band === 'orbital' ? 5_000 : 900
+    const trueRadius = body.radiusKm / AU_KM * worldScale
+    const markerRadius = body.id === 'sun' ? 0.75 : 0.13 + Math.log10(body.radiusKm / 2_000 + 1) * 0.11
+    const radius = detailed && distance < 0.05 ? Math.max(trueRadius, markerRadius * 0.65) : markerRadius
+    visualGroup.current.scale.setScalar(radius)
+    if (labelGroup.current) labelGroup.current.position.set(radius + 0.38, Math.min(radius * 0.25, 0.45), 0)
+  })
+  return <group ref={group} onClick={(event) => { event.stopPropagation(); onSelect(body.id) }}>
+    {body.id === 'sun' && <pointLight intensity={quality === 'desktop' ? 5.2 : 3.8} distance={240} decay={0.45} color="#fff0c2" />}
+    <group ref={visualGroup}>
+      {detailed ? <DetailedPlanet body={body} dayMap={dayMap} quality={quality} sunDirection={sunDirection} utcMs={utcMs} /> : body.id === 'sun' ? <SunVisual detailed={false} quality={quality} /> : <mesh><sphereGeometry args={[1, 24, 18]} /><meshStandardMaterial color={body.color} roughness={0.9} /></mesh>}
+      {selected && band === 'solar' && <mesh rotation={[Math.PI / 2, 0, 0]}><ringGeometry args={[1.35, 1.48, 48]} /><meshBasicMaterial color="#9bdcff" transparent opacity={0.9} side={THREE.DoubleSide} /></mesh>}
+    </group>
+    {band === 'solar' && (selected || ['sun', 'earth', 'mars', 'jupiter', 'saturn', 'neptune'].includes(body.id)) && <group ref={labelGroup}><Text fontSize={0.32} color={selected ? '#ffffff' : '#9fb7ca'} anchorX="left">{body.label}</Text></group>}
+  </group>
+}
+
+type SmallBody = KeplerOrbit & { id: string; label: string; englishLabel: string }
+
+function SmallBodies({ observer, band, utcMs }: { observer: React.MutableRefObject<AuVector>; band: SpaceBand; utcMs: number }) {
+  const [bodies, setBodies] = useState<SmallBody[]>([])
+  useEffect(() => { fetch(`${import.meta.env.BASE_URL}assets/solar/small-bodies.json`).then((response) => response.json()).then((payload: { bodies: SmallBody[] }) => setBodies(payload.bodies)).catch(() => setBodies([])) }, [])
+  const julianDay = utcMs / 86_400_000 + 2_440_587.5
+  return <>{bodies.map((body) => {
+    const position = propagateKeplerOrbit(body, julianDay)
+    const state = { id: body.id, label: body.label, englishLabel: body.englishLabel, color: '#d77c43', radiusKm: 20, positionAu: position } as CelestialBodyState
+    return <FloatingBody key={body.id} body={state} dayMap={null as unknown as THREE.Texture} observer={observer} band={band} nearestId="" quality="mobile" selected={false} sunDirection={new THREE.Vector3(1, 0, 0)} utcMs={utcMs} onSelect={() => undefined} />
+  })}</>
+}
+
+function FlightWorld({ dayMap, navigation, quality, selectedObjectId, showSmallBodies, sunDirection, utcMs, onNavigationChange, onSelect }: { dayMap: THREE.Texture; navigation: NavigationState; quality: Quality; selectedObjectId?: string; showSmallBodies: boolean; sunDirection: THREE.Vector3; utcMs: number; onNavigationChange: (state: NavigationState) => void; onSelect: (id: string) => void }) {
+  const snapshot = useMemo(() => getSolarSystemSnapshot(utcMs), [utcMs])
+  const observer = useRef<AuVector>([...navigation.observerHelioAu])
+  const band = useRef<SpaceBand>(navigation.band)
+  const keys = useRef(new Set<string>())
+  const speedMultiplier = useRef(1)
+  const autopilot = useRef<{ id: string; start: AuVector; approach: AuVector; standoffAu: number; started: number; duration: number } | null>(null)
+  const clearingAutopilot = useRef(false)
+  const lastReport = useRef(0)
+  const { camera, gl } = useThree()
+  const navigationRef = useRef(navigation)
+  const onNavigationRef = useRef(onNavigationChange)
+  const snapshotRef = useRef(snapshot)
+  const localMovement = useMemo(() => new THREE.Vector3(), [])
+  const turnQuaternion = useMemo(() => new THREE.Quaternion(), [])
+  const verticalAxis = useMemo(() => new THREE.Vector3(0, 1, 0), [])
+  const collisionVector = useMemo(() => new THREE.Vector3(), [])
+  const autopilotLook = useMemo(() => new THREE.Vector3(), [])
+  const autopilotQuaternion = useMemo(() => new THREE.Quaternion(), [])
+  const cameraForward = useMemo(() => new THREE.Vector3(0, 0, -1), [])
+  const mouseEuler = useMemo(() => new THREE.Euler(0, 0, 0, 'YXZ'), [])
+  navigationRef.current = navigation
+  onNavigationRef.current = onNavigationChange
+  snapshotRef.current = snapshot
+
+  useEffect(() => {
+    camera.position.set(0, 0, 0)
+    camera.quaternion.set(...navigation.orientation)
+    camera.near = 0.001
+    camera.far = 500
+    camera.updateProjectionMatrix()
+  }, [camera])
+
+  useEffect(() => {
+    const id = navigation.autopilotTargetId
+    if (!id) { autopilot.current = null; clearingAutopilot.current = false; return }
+    const target = snapshotRef.current.find((body) => body.id === id)
+    if (!target) return
+    const direction = new THREE.Vector3(observer.current[0] - target.positionAu[0], observer.current[1] - target.positionAu[1], observer.current[2] - target.positionAu[2])
+    if (direction.lengthSq() < 1e-12) direction.set(0, -1, 0)
+    direction.normalize()
+    const approach: AuVector = [direction.x, direction.y, direction.z]
+    const standoffAu = target.radiusKm / AU_KM * 4.6
+    const end: AuVector = [target.positionAu[0] + approach[0] * standoffAu, target.positionAu[1] + approach[1] * standoffAu, target.positionAu[2] + approach[2] * standoffAu]
+    const distance = Math.hypot(end[0] - observer.current[0], end[1] - observer.current[1], end[2] - observer.current[2])
+    clearingAutopilot.current = false
+    autopilot.current = { id, start: [...observer.current], approach, standoffAu, started: performance.now(), duration: autopilotDuration(distance) }
+  }, [navigation.autopilotTargetId])
+
+  useEffect(() => {
+    const cancelAutopilot = () => {
+      if (!autopilot.current) return
+      autopilot.current = null
+      clearingAutopilot.current = true
+      onNavigationRef.current({ ...navigationRef.current, observerHelioAu: [...observer.current], orientation: camera.quaternion.toArray() as [number, number, number, number], autopilotTargetId: undefined })
+    }
+    const down = (event: KeyboardEvent) => { keys.current.add(event.code); cancelAutopilot() }
+    const up = (event: KeyboardEvent) => keys.current.delete(event.code)
+    const blur = () => keys.current.clear()
+    const mouse = (event: MouseEvent) => {
+      if (document.pointerLockElement !== gl.domElement) return
+      cancelAutopilot()
+      mouseEuler.setFromQuaternion(camera.quaternion, 'YXZ')
+      mouseEuler.y -= event.movementX * 0.0018
+      mouseEuler.x = THREE.MathUtils.clamp(mouseEuler.x - event.movementY * 0.0018, -Math.PI * 0.49, Math.PI * 0.49)
+      camera.quaternion.setFromEuler(mouseEuler)
+    }
+    const wheel = (event: WheelEvent) => { event.preventDefault(); speedMultiplier.current = THREE.MathUtils.clamp(speedMultiplier.current * Math.exp(-event.deltaY * 0.001), 0.1, 12) }
+    const lock = () => { if (!gl.xr.isPresenting && document.pointerLockElement !== gl.domElement) void gl.domElement.requestPointerLock() }
+    window.addEventListener('keydown', down); window.addEventListener('keyup', up); window.addEventListener('blur', blur); window.addEventListener('mousemove', mouse)
+    gl.domElement.addEventListener('wheel', wheel, { passive: false }); gl.domElement.addEventListener('click', lock)
+    return () => {
+      window.removeEventListener('keydown', down); window.removeEventListener('keyup', up); window.removeEventListener('blur', blur); window.removeEventListener('mousemove', mouse)
+      gl.domElement.removeEventListener('wheel', wheel); gl.domElement.removeEventListener('click', lock)
+    }
+  }, [camera, gl, mouseEuler])
+
+  useFrame((_, delta) => {
+    const closest = nearestBody(observer.current, snapshot)
+    band.current = selectSpaceBand(closest.distanceAu)
+    const baseSpeed = adaptiveFlightSpeed(closest.distanceAu)
+    let moved = false
+    if (autopilot.current) {
+      const elapsed = (performance.now() - autopilot.current.started) / 1_000
+      const linear = THREE.MathUtils.clamp(elapsed / autopilot.current.duration, 0, 1)
+      const currentTarget = snapshot.find((body) => body.id === autopilot.current?.id)
+      if (currentTarget) {
+        observer.current = movingAutopilotPosition(autopilot.current.start, currentTarget.positionAu, autopilot.current.approach, autopilot.current.standoffAu, linear)
+        planetPosition(currentTarget, observer.current, band.current, autopilotLook)
+        if (autopilotLook.lengthSq() > 0.000001) {
+          autopilotQuaternion.setFromUnitVectors(cameraForward, autopilotLook.normalize())
+          camera.quaternion.slerp(autopilotQuaternion, 1 - Math.exp(-delta * 2.8))
+        }
+      }
+      moved = true
+      if (linear >= 1) {
+        autopilot.current = null
+        clearingAutopilot.current = true
+        navigationRef.current = { ...navigationRef.current, autopilotTargetId: undefined }
+      }
+    } else {
+      const local = localMovement.set(
+        Number(keys.current.has('KeyD')) - Number(keys.current.has('KeyA')),
+        Number(keys.current.has('KeyE')) - Number(keys.current.has('KeyQ')),
+        Number(keys.current.has('KeyS')) - Number(keys.current.has('KeyW')),
+      )
+      const session = gl.xr.getSession()
+      if (session) for (const source of session.inputSources) {
+        const axes = source.gamepad?.axes
+        if (!axes) continue
+        if (source.handedness === 'left') { local.x += axes[2] ?? 0; local.z += axes[3] ?? 0 }
+        if (source.handedness === 'right') {
+          const yaw = -(axes[2] ?? 0) * delta * 1.25
+          camera.quaternion.premultiply(turnQuaternion.setFromAxisAngle(verticalAxis, yaw))
+          local.y -= axes[3] ?? 0
+          if (source.gamepad?.buttons[0]?.pressed) speedMultiplier.current = Math.min(12, speedMultiplier.current * (1 + delta * 1.6))
+          if (source.gamepad?.buttons[1]?.pressed) speedMultiplier.current = Math.max(0.1, speedMultiplier.current * (1 - delta * 1.8))
+        }
+      }
+      if (local.lengthSq() > 0.0001) {
+        local.normalize().applyQuaternion(camera.quaternion)
+        const boost = keys.current.has('ShiftLeft') || keys.current.has('ShiftRight') ? 5 : 1
+        const step = baseSpeed * speedMultiplier.current * boost * delta
+        observer.current[0] += local.x * step
+        observer.current[1] += -local.z * step
+        observer.current[2] += local.y * step
+        moved = true
+      }
+    }
+    const afterMove = nearestBody(observer.current, snapshot)
+    const minimum = afterMove.radiusKm / AU_KM * 1.05
+    if (afterMove.distanceAu < minimum) {
+      const away = collisionVector.set(observer.current[0] - afterMove.positionAu[0], observer.current[1] - afterMove.positionAu[1], observer.current[2] - afterMove.positionAu[2]).normalize().multiplyScalar(minimum)
+      observer.current = [afterMove.positionAu[0] + away.x, afterMove.positionAu[1] + away.y, afterMove.positionAu[2] + away.z]
+    }
+    if (moved || performance.now() - lastReport.current > 180) {
+      if (performance.now() - lastReport.current > 90) {
+        lastReport.current = performance.now()
+        onNavigationRef.current({ controlMode: 'flight', observerHelioAu: [...observer.current], orientation: camera.quaternion.toArray() as [number, number, number, number], speedAuPerSecond: baseSpeed * speedMultiplier.current, band: band.current, autopilotTargetId: clearingAutopilot.current ? undefined : autopilot.current?.id ?? navigationRef.current.autopilotTargetId })
+      }
+    }
+  })
+
+  const closest = nearestBody(navigation.observerHelioAu, snapshot)
+  return <>
+    {navigation.band !== 'surface' && ORBIT_IDS.map((id) => <FloatingOrbit key={id} id={id} observer={observer} band={navigation.band} quality={quality} utcMs={utcMs} />)}
+    {snapshot.map((body) => <FloatingBody key={body.id} body={body} dayMap={dayMap} observer={observer} band={navigation.band} nearestId={closest.id} quality={quality} selected={body.id === selectedObjectId} sunDirection={sunDirection} utcMs={utcMs} onSelect={onSelect} />)}
+    {showSmallBodies && <SmallBodies observer={observer} band={navigation.band} utcMs={utcMs} />}
+  </>
 }
 
 function VRPresetMenu({ onPresetChange }: { onPresetChange: (preset: CameraPresetId) => void }) {
@@ -440,28 +573,18 @@ function VRPresetMenu({ onPresetChange }: { onPresetChange: (preset: CameraPrese
   </group>)}</group>
 }
 
-export function Scene({ annotations, forecastClouds, preset, quality, utcMs, onPresetChange, onSkyReady, onCloudStatus }: Props) {
-  const controls = useRef<OrbitControlsImpl | null>(null)
-  const motion = useRef<Motion>({ active: false, target: new THREE.Vector3(...CAMERA_PRESETS[0].position), duration: 1.5 })
+export function Scene({ annotations, navigation, preset, quality, selectedObjectId, showSmallBodies, utcMs, onNavigationChange, onObservationStatus, onPresetChange, onSelect, onSkyReady }: Props) {
+  const dayMap = useEarthObservationTexture(utcMs, quality, onObservationStatus)
   const sunDirection = useMemo(() => new THREE.Vector3(...getEarthFixedSunDirection(utcMs)), [utcMs])
-  const moonPosition = useMemo(() => {
-    const snapshot = getSolarSystemSnapshot(utcMs)
-    const earth = snapshot.find((body) => body.id === 'earth')!
-    const moon = snapshot.find((body) => body.id === 'moon')!
-    return new THREE.Vector3(moon.positionAu[0] - earth.positionAu[0], moon.positionAu[2] - earth.positionAu[2], earth.positionAu[1] - moon.positionAu[1]).normalize().multiplyScalar(28.3).toArray() as [number, number, number]
-  }, [utcMs])
-  const lightPosition = useMemo(() => sunDirection.clone().multiplyScalar(30), [sunDirection])
-  useEffect(() => { document.title = 'Earth Observation / 自由太空观察' }, [])
+  useEffect(() => { document.title = '地球与太阳系观察 / Live Earth & Solar System' }, [])
   return <>
     <color attach="background" args={['#010207']} />
-    <ambientLight intensity={0.09} color="#c6d7e7" />
-    <directionalLight position={lightPosition} intensity={3.15} color="#fff7df" />
+    <ambientLight intensity={0.08} color="#b8cae0" />
+    <directionalLight position={sunDirection.clone().multiplyScalar(80)} intensity={3.2} color="#fff7df" />
     <StarCatalog onReady={onSkyReady} quality={quality} />
-    <XRMovement preset={preset} forecastClouds={forecastClouds} onCloudStatus={onCloudStatus} quality={quality} sunDirection={sunDirection} moonPosition={moonPosition} />
-    <CameraDirector preset={preset} controls={controls} motion={motion} />
+    {navigation.controlMode === 'orbit'
+      ? <OrbitEarth annotations={annotations} dayMap={dayMap} preset={preset} quality={quality} sunDirection={sunDirection} utcMs={utcMs} />
+      : <FlightWorld dayMap={dayMap} navigation={navigation} quality={quality} selectedObjectId={selectedObjectId} showSmallBodies={showSmallBodies} sunDirection={sunDirection} utcMs={utcMs} onNavigationChange={onNavigationChange} onSelect={onSelect} />}
     <VRPresetMenu onPresetChange={onPresetChange} />
-    <Annotations visible={annotations} moonPosition={moonPosition} />
-    <OrbitControls ref={controls} enableDamping dampingFactor={0.06} minDistance={2.72} maxDistance={15} target={[0, 0, 0]} onStart={() => { motion.current.active = false }} />
-    <CaptureCamera />
   </>
 }

@@ -1,20 +1,11 @@
 import { MAX_SIMULATION_TIME, MIN_SIMULATION_TIME } from './astro'
 
-export type ScaleMode = 'earth' | 'solar' | 'stellar'
-
 export interface SimulationState {
   utcMs: number
   paused: boolean
   rate: number
-  mode: ScaleMode
   selectedObjectId?: string
 }
-
-export const SCALE_MODES: ReadonlyArray<{ id: ScaleMode; label: string; englishLabel: string }> = [
-  { id: 'earth', label: '地球观察', englishLabel: 'EARTH' },
-  { id: 'solar', label: '太阳系', englishLabel: 'SOLAR SYSTEM' },
-  { id: 'stellar', label: '恒星邻域', englishLabel: 'STELLAR NEIGHBOURHOOD' },
-]
 
 export const PLAYBACK_RATES = [-86_400, -3_600, 0, 3_600, 86_400, 2_592_000] as const
 

@@ -1,9 +1,10 @@
 import { describe, expect, it } from 'vitest'
-import { SCALE_MODES, formatDateInput, parseDateInput } from './simulation'
+import * as simulation from './simulation'
+import { formatDateInput, parseDateInput } from './simulation'
 
-describe('scale modes', () => {
-  it('keeps the semantic zoom order earth, solar, stellar', () => {
-    expect(SCALE_MODES.map((mode) => mode.id)).toEqual(['earth', 'solar', 'stellar'])
+describe('unified scene state', () => {
+  it('does not expose public scale modes', () => {
+    expect('SCALE_MODES' in simulation).toBe(false)
   })
 })
 
