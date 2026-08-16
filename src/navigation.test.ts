@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { adaptiveFlightSpeed, compressedRenderDistance, getTargetIndicatorState, nearestBody, selectSpaceBand } from './navigation'
+import { adaptiveFlightSpeed, compressedRenderDistance, effectiveObserverPosition, getTargetIndicatorState, nearestBody, selectSpaceBand } from './navigation'
 
 describe('floating-origin navigation', () => {
   it('finds the nearest body in heliocentric AU coordinates', () => {
@@ -33,6 +33,12 @@ describe('floating-origin navigation', () => {
     expect(selectSpaceBand(0.002)).toBe('surface')
     expect(selectSpaceBand(0.02)).toBe('orbital')
     expect(selectSpaceBand(1)).toBe('solar')
+  })
+
+  it('keeps an orbit observer attached to the current earth position', () => {
+    const orbitNavigation = { controlMode: 'orbit' as const, observerHelioAu: [1, 2, 3] as [number, number, number], orientation: [0, 0, 0, 1] as [number, number, number, number], speedAuPerSecond: 0.001, band: 'surface' as const }
+    expect(effectiveObserverPosition(orbitNavigation, [0.8, 0.4, -0.2], 0.0002)).toEqual([0.8, 0.39980000000000004, -0.2])
+    expect(effectiveObserverPosition({ ...orbitNavigation, controlMode: 'flight' }, [0.8, 0.4, -0.2], 0.0002)).toEqual([1, 2, 3])
   })
 
   it('keeps an off-screen target indicator on the viewport edge without moving the observer', () => {

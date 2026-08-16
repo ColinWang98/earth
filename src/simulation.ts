@@ -7,7 +7,7 @@ export interface SimulationState {
   selectedObjectId?: string
 }
 
-export const PLAYBACK_RATES = [-86_400, -3_600, 0, 3_600, 86_400, 2_592_000] as const
+export const PLAYBACK_RATES = [-86_400, -3_600, 1, 3_600, 86_400, 2_592_000] as const
 
 export function formatDateInput(utcMs: number) {
   return new Date(utcMs).toISOString().slice(0, 10)

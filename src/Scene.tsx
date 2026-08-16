@@ -27,7 +27,6 @@ export interface EarthObservationStatus {
   date?: string
   fallback: boolean
   resolution: EarthResolution['label']
-  dynamicClouds: boolean
 }
 
 type Props = {
@@ -54,7 +53,6 @@ const J2000_MS = Date.UTC(2000, 0, 1, 12)
 const DAY_MAP = `${import.meta.env.BASE_URL}assets/earth-blue-marble-5k.jpg`
 const NIGHT_MAP = `${import.meta.env.BASE_URL}assets/earth-night.png`
 const OCEAN_MASK = `${import.meta.env.BASE_URL}assets/earth-specular.jpg`
-const CLOUD_MAP = `${import.meta.env.BASE_URL}assets/earth-clouds.png`
 const MOON_MAP = `${import.meta.env.BASE_URL}assets/moon.jpg`
 const SUN_MAP = `${import.meta.env.BASE_URL}assets/sun-real.jpg`
 const STAR_CATALOG = `${import.meta.env.BASE_URL}assets/stars/hyg-bright-stars.bin`
@@ -137,14 +135,14 @@ function useEarthObservationTexture(utcMs: number, quality: Quality, closeView: 
     const useFallback = (label: string) => {
       if (cancelled) return
       setTextures({ base: fallback, primary: fallback, secondary: fallback, mix: 0, resolution })
-      onStatus({ source: 'NASA Blue Marble', label: `${label} · ${resolution.label} · 动态云演示`, fallback: true, resolution: resolution.label, dynamicClouds: true })
+      onStatus({ source: 'NASA Blue Marble', label: `${label} · ${resolution.label} · 无实时云层`, fallback: true, resolution: resolution.label })
     }
     const load = async () => {
       if (choice.kind === 'fallback') {
         useFallback(choice.reason === 'future-date' ? '未来日期无卫星观测 · 使用 Blue Marble' : '卫星时代之前 · 使用 Blue Marble')
         return
       }
-      onStatus({ source: 'NASA GIBS', label: choice.kind === 'recent' ? `正在寻找最新完整卫星观测 · ${resolution.label}…` : `正在加载 ${choice.date} 卫星观测 · ${resolution.label}…`, fallback: false, resolution: resolution.label, dynamicClouds: true })
+      onStatus({ source: 'NASA GIBS', label: choice.kind === 'recent' ? `正在寻找最新完整卫星观测 · ${resolution.label}…` : `正在加载 ${choice.date} 卫星观测 · ${resolution.label}…`, fallback: false, resolution: resolution.label })
       try {
         let date: string | undefined
         if (choice.kind === 'recent') {
@@ -178,7 +176,7 @@ function useEarthObservationTexture(utcMs: number, quality: Quality, closeView: 
         owned.current = nextOwned
         setTextures({ base: fallback, primary, secondary, mix: secondaryImage ? frames.mix : 0, resolution: actualResolution })
         const delayHours = Math.max(0, (Date.now() - Date.parse(`${date}T12:00:00.000Z`)) / 3_600_000)
-        onStatus({ source: choice.layer.startsWith('VIIRS') ? 'NASA GIBS · VIIRS/Suomi NPP' : 'NASA GIBS · MODIS/Terra', label: `${choice.kind === 'recent' ? `${date} 近实时卫星真彩 · 约 ${Math.round(delayHours)} 小时延迟` : `${date} 历史卫星真彩`} · ${actualResolution.label} · 动态云演示`, date, fallback: false, resolution: actualResolution.label, dynamicClouds: true })
+        onStatus({ source: choice.layer.startsWith('VIIRS') ? 'NASA GIBS · VIIRS/Suomi NPP' : 'NASA GIBS · MODIS/Terra', label: `${choice.kind === 'recent' ? `${date} 近实时卫星真彩 · 约 ${Math.round(delayHours)} 小时延迟` : `${date} 历史卫星真彩`} · ${actualResolution.label} · 真彩图含实测云层`, date, fallback: false, resolution: actualResolution.label })
         if (previous.length) retireTimer = window.setTimeout(() => disposeReplacedTextures(previous), 1_500)
       } catch {
         useFallback('NASA GIBS 暂不可用 · 使用 Blue Marble')
@@ -238,27 +236,12 @@ function EarthSurface({ baseMap, dayMaps, dayMix, nightMap, oceanMask, radius, s
   </mesh>
 }
 
-function DynamicCloudLayer({ quality, radius }: { quality: Quality; radius: number }) {
-  const cloudMap = useTexture(CLOUD_MAP, quality)
-  const material = useRef<THREE.ShaderMaterial>(null)
-  useFrame((_, delta) => { if (material.current) material.current.uniforms.time.value += delta })
-  return <mesh scale={1.012} renderOrder={3}>
-    <sphereGeometry args={[radius, quality === 'desktop' ? 112 : 64, quality === 'desktop' ? 80 : 48]} />
-    <shaderMaterial ref={material} transparent depthWrite={false} uniforms={{ cloudMap: { value: cloudMap }, time: { value: 0 } }} vertexShader={`
-      uniform float time; varying vec2 vUv; void main(){vUv=uv+vec2(time*0.00008,0.0015*sin(uv.x*18.0+time*0.025));vec3 p=position+normal*(0.0025*sin(uv.x*31.0+uv.y*19.0+time*0.04));gl_Position=projectionMatrix*modelViewMatrix*vec4(p,1.0);}
-    `} fragmentShader={`
-      uniform sampler2D cloudMap; varying vec2 vUv; void main(){vec3 c=texture2D(cloudMap,fract(vUv)).rgb;float cloud=smoothstep(0.48,0.88,max(c.r,max(c.g,c.b)));gl_FragColor=vec4(vec3(0.95,0.98,1.0),cloud*0.09);}
-    `} />
-  </mesh>
-}
-
 function EarthGlobe({ baseMap, dayMaps, dayMix, quality, radius, sunDirection }: { baseMap: THREE.Texture; dayMaps: [THREE.Texture, THREE.Texture]; dayMix: number; quality: Quality; radius: number; sunDirection: THREE.Vector3 }) {
   const night = useTexture(NIGHT_MAP, quality)
   const ocean = useTexture(OCEAN_MASK, quality, THREE.NoColorSpace)
   const segments = quality === 'desktop' ? 128 : 72
   return <group>
     <EarthSurface baseMap={baseMap} dayMaps={dayMaps} dayMix={dayMix} nightMap={night} oceanMask={ocean} radius={radius} segments={segments} sunDirection={sunDirection} />
-    <DynamicCloudLayer quality={quality} radius={radius} />
     <Atmosphere radius={radius} segments={segments} />
   </group>
 }

@@ -20,6 +20,11 @@ export interface TargetIndicatorState {
   distanceLabel: string
 }
 
+export function effectiveObserverPosition(navigation: NavigationState, earthPositionAu: AuVector, orbitStandoffAu: number): AuVector {
+  if (navigation.controlMode === 'flight') return navigation.observerHelioAu
+  return [earthPositionAu[0], earthPositionAu[1] - orbitStandoffAu, earthPositionAu[2]]
+}
+
 export function getTargetIndicatorState(objectId: string, ndc: AuVector, distanceLabel: string): TargetIndicatorState {
   const onScreen = Math.abs(ndc[0]) <= 1 && Math.abs(ndc[1]) <= 1 && ndc[2] >= -1 && ndc[2] <= 1
   if (onScreen) return { objectId, onScreen, screenPosition: [ndc[0], ndc[1]], directionAngleRad: Math.atan2(ndc[1], ndc[0]), distanceLabel }

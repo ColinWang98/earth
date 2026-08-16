@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import * as simulation from './simulation'
-import { formatDateInput, parseDateInput } from './simulation'
+import { formatDateInput, parseDateInput, PLAYBACK_RATES } from './simulation'
 
 describe('unified scene state', () => {
   it('does not expose public scale modes', () => {
@@ -18,5 +18,12 @@ describe('date input', () => {
     expect(parseDateInput('1899-12-31')).toBeNull()
     expect(parseDateInput('2101-01-01')).toBeNull()
     expect(parseDateInput('not-a-date')).toBeNull()
+  })
+})
+
+describe('live playback', () => {
+  it('uses one simulated second per real second for the live rate', () => {
+    expect(PLAYBACK_RATES).toContain(1)
+    expect(PLAYBACK_RATES).not.toContain(0)
   })
 })

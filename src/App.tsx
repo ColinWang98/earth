@@ -5,7 +5,7 @@ import { XR, createXRStore } from '@react-three/xr'
 import { CAMERA_PRESETS, Scene, type CameraPresetId, type EarthObservationStatus } from './Scene'
 import { advanceSimulationTime, getSolarSystemSnapshot, MAX_SIMULATION_TIME, MIN_SIMULATION_TIME } from './astro'
 import { formatDateInput, parseDateInput, PLAYBACK_RATES, type SimulationState } from './simulation'
-import { distanceAu, nearestBody, type NavigationState } from './navigation'
+import { distanceAu, effectiveObserverPosition, nearestBody, type NavigationState } from './navigation'
 import { getSmallBodyStates, SMALL_BODIES } from './smallBodies'
 import type { TargetIndicatorState } from './navigation'
 import { percentile95 } from './performance'
@@ -13,7 +13,7 @@ import { percentile95 } from './performance'
 const AU_KM = 149_597_870.7
 const xrStore = createXRStore({ controller: { rayPointer: true, teleportPointer: false } })
 const RATE_LABELS = new Map<number, string>([
-  [-86_400, '−1 天/秒'], [-3_600, '−1 小时/秒'], [0, '实时'], [3_600, '1 小时/秒'], [86_400, '1 天/秒'], [2_592_000, '30 天/秒'],
+  [-86_400, '−1 天/秒'], [-3_600, '−1 小时/秒'], [1, '实时 1×'], [3_600, '1 小时/秒'], [86_400, '1 天/秒'], [2_592_000, '30 天/秒'],
 ])
 
 function nearEarthNavigation(utcMs: number): NavigationState {
@@ -49,15 +49,15 @@ export function App() {
   const [search, setSearch] = useState('')
   const [frameP95, setFrameP95] = useState<number | null>(null)
   const [targetIndicator, setTargetIndicator] = useState<TargetIndicatorState | null>(null)
-  const [observation, setObservation] = useState<EarthObservationStatus>({ source: 'Blue Marble', label: '正在准备 NASA 卫星影像…', fallback: true, resolution: /OculusBrowser|Android|iPhone|iPad/i.test(navigator.userAgent) ? '2K' : '4K', dynamicClouds: true })
-  const [simulation, setSimulation] = useState<SimulationState>(() => ({ utcMs: Date.now(), paused: true, rate: 86_400, selectedObjectId: 'earth' }))
+  const [observation, setObservation] = useState<EarthObservationStatus>({ source: 'Blue Marble', label: '正在准备 NASA 卫星影像…', fallback: true, resolution: /OculusBrowser|Android|iPhone|iPad/i.test(navigator.userAgent) ? '2K' : '4K' })
+  const [simulation, setSimulation] = useState<SimulationState>(() => ({ utcMs: Date.now(), paused: false, rate: 1, selectedObjectId: 'earth' }))
   const [navigation, setNavigation] = useState<NavigationState>(() => nearEarthNavigation(Date.now()))
   const [quality] = useState(() => /OculusBrowser|Android|iPhone|iPad/i.test(navigator.userAgent) ? 'mobile' as const : 'desktop' as const)
   const [dprCap, setDprCap] = useState(() => quality === 'mobile' ? 1.15 : 1.65)
   const handleSkyReady = useCallback(() => setSkyReady(true), [])
 
   useEffect(() => {
-    if (simulation.paused || simulation.rate === 0) return
+    if (simulation.paused) return
     let previous = performance.now()
     const timer = window.setInterval(() => {
       const now = performance.now()
@@ -72,14 +72,16 @@ export function App() {
   const smallBodyStates = useMemo(() => getSmallBodyStates(simulation.utcMs), [simulation.utcMs])
   const searchableBodies = useMemo(() => [...snapshot, ...smallBodyStates], [snapshot, smallBodyStates])
   const selectedBody = searchableBodies.find((body) => body.id === simulation.selectedObjectId)
-  const nearest = useMemo(() => nearestBody(navigation.observerHelioAu, snapshot), [navigation.observerHelioAu, snapshot])
-  const selectedDistance = selectedBody ? distanceAu(navigation.observerHelioAu, selectedBody.positionAu) : null
+  const earth = snapshot.find((body) => body.id === 'earth')!
+  const observerPosition = effectiveObserverPosition(navigation, earth.positionAu, earth.radiusKm / AU_KM * 4.6)
+  const nearest = nearestBody(observerPosition, snapshot)
+  const selectedDistance = selectedBody ? distanceAu(observerPosition, selectedBody.positionAu) : null
 
   const setDate = (value: string) => {
     const parsed = parseDateInput(value)
     if (parsed != null) setSimulation((current) => ({ ...current, utcMs: parsed }))
   }
-  const resetNow = () => setSimulation((current) => ({ ...current, utcMs: Math.min(MAX_SIMULATION_TIME, Math.max(MIN_SIMULATION_TIME, Date.now())) }))
+  const resetNow = () => setSimulation((current) => ({ ...current, utcMs: Math.min(MAX_SIMULATION_TIME, Math.max(MIN_SIMULATION_TIME, Date.now())), paused: false, rate: 1 }))
   const setControlMode = (controlMode: NavigationState['controlMode']) => {
     if (controlMode === 'flight') {
       const next = nearEarthNavigation(simulation.utcMs)
@@ -105,6 +107,8 @@ export function App() {
   const distanceLabel = nearest.distanceAu < 0.01 ? `${Math.round(nearest.distanceAu * AU_KM).toLocaleString()} km` : `${nearest.distanceAu.toFixed(3)} AU`
   const selectedDistanceLabel = selectedDistance == null ? '' : selectedDistance < 0.01 ? `${Math.round(selectedDistance * AU_KM).toLocaleString()} km` : `${selectedDistance.toFixed(3)} AU`
   const selectedIsSmallBody = SMALL_BODIES.some((body) => body.id === selectedBody?.id)
+  const selectedCoordinates = selectedBody?.positionAu.map((value) => value.toFixed(7)).join(' / ')
+  const dataTimestamp = new Date(simulation.utcMs).toISOString().replace('T', ' ').slice(0, 19)
 
   return <main className={`experience band-${navigation.band} control-${navigation.controlMode}`}>
     <Canvas camera={{ position: [0, 1.25, 9], fov: 48, near: 0.001, far: 500 }} dpr={[quality === 'mobile' ? 0.8 : 1, dprCap]} gl={{ antialias: true, powerPreference: 'high-performance' }}>
@@ -156,7 +160,7 @@ export function App() {
 
     {targetIndicator && selectedBody && selectedBody.id !== nearest.id && <div className={`target-indicator ${targetIndicator.onScreen ? 'on-screen' : 'off-screen'}`} style={{ left: `${(targetIndicator.screenPosition[0] + 1) * 50}%`, top: `${(1 - targetIndicator.screenPosition[1]) * 50}%` }}><i style={{ transform: `rotate(${-targetIndicator.directionAngleRad}rad)` }}>➤</i><strong>{selectedBody.label}</strong><span>{targetIndicator.distanceLabel}</span></div>}
 
-    {selectedBody && <aside className="object-details"><small>SELECTED OBJECT</small><h2>{selectedBody.label}</h2><p>{selectedBody.englishLabel}</p><dl><div><dt>观察距离</dt><dd>{selectedDistanceLabel}</dd></div><div><dt>{selectedIsSmallBody ? '显示方式' : '平均半径'}</dt><dd>{selectedIsSmallBody ? '视觉放大标记' : `${selectedBody.radiusKm.toLocaleString()} km`}</dd></div><div><dt>位置数据</dt><dd>{selectedIsSmallBody ? 'NASA/JPL SBDB' : 'Astronomy Engine / JPL'}</dd></div></dl></aside>}
+    {selectedBody && <aside className="object-details"><small>SELECTED OBJECT</small><h2>{selectedBody.label}</h2><p>{selectedBody.englishLabel}</p><dl><div><dt>观察距离</dt><dd>{selectedDistanceLabel}</dd></div><div><dt>{selectedIsSmallBody ? '显示方式' : '平均半径'}</dt><dd>{selectedIsSmallBody ? '视觉放大标记' : `${selectedBody.radiusKm.toLocaleString()} km`}</dd></div><div><dt>日心坐标 (AU)</dt><dd>{selectedCoordinates}</dd></div><div><dt>数据时刻</dt><dd>{dataTimestamp} UTC</dd></div><div><dt>位置数据</dt><dd>{selectedIsSmallBody ? 'NASA/JPL SBDB' : 'Astronomy Engine / JPL'}</dd></div></dl></aside>}
 
     <footer>
       <span>{navigation.band === 'surface' ? '近地表尺度' : navigation.band === 'orbital' ? '行星轨道尺度' : '太阳系尺度 · 远景尺寸已放大'}</span>
