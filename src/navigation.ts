@@ -12,26 +12,9 @@ export interface NavigationState {
   band: SpaceBand
 }
 
-export interface TargetIndicatorState {
-  objectId: string
-  onScreen: boolean
-  screenPosition: [number, number]
-  directionAngleRad: number
-  distanceLabel: string
-}
-
 export function effectiveObserverPosition(navigation: NavigationState, earthPositionAu: AuVector, orbitStandoffAu: number): AuVector {
   if (navigation.controlMode === 'flight') return navigation.observerHelioAu
   return [earthPositionAu[0], earthPositionAu[1] - orbitStandoffAu, earthPositionAu[2]]
-}
-
-export function getTargetIndicatorState(objectId: string, ndc: AuVector, distanceLabel: string): TargetIndicatorState {
-  const onScreen = Math.abs(ndc[0]) <= 1 && Math.abs(ndc[1]) <= 1 && ndc[2] >= -1 && ndc[2] <= 1
-  if (onScreen) return { objectId, onScreen, screenPosition: [ndc[0], ndc[1]], directionAngleRad: Math.atan2(ndc[1], ndc[0]), distanceLabel }
-  const directionX = ndc[2] > 1 ? -ndc[0] : ndc[0]
-  const directionY = ndc[2] > 1 ? -ndc[1] : ndc[1]
-  const edgeScale = 0.88 / Math.max(Math.abs(directionX), Math.abs(directionY), 0.0001)
-  return { objectId, onScreen, screenPosition: [directionX * edgeScale, directionY * edgeScale], directionAngleRad: Math.atan2(directionY, directionX), distanceLabel }
 }
 
 export function distanceAu(left: AuVector, right: AuVector) {

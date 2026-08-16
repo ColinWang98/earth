@@ -9,13 +9,39 @@ describe('unified earth and solar-system application boundary', () => {
     expect(app).not.toContain('scale-navigation')
   })
 
-  it('keeps search manual and ships no automatic cruise state', () => {
+  it('ships no locator UI, target indicator, or automatic cruise state', () => {
     const app = readFileSync(new URL('./App.tsx', import.meta.url), 'utf8')
+    const scene = readFileSync(new URL('./Scene.tsx', import.meta.url), 'utf8')
     const navigation = readFileSync(new URL('./navigation.ts', import.meta.url), 'utf8')
+    expect(app).not.toContain('object-search')
+    expect(app).not.toContain('>定位<')
+    expect(app).not.toContain('target-indicator')
+    expect(scene).not.toContain('TargetTracker')
+    expect(navigation).not.toContain('TargetIndicatorState')
     expect(app).not.toContain('巡航')
     expect(app).not.toContain('cruiseTo')
     expect(navigation).not.toContain('autopilotTargetId')
     expect(navigation).not.toContain('movingAutopilotPosition')
+  })
+
+  it('uses a latitude-aware Blue Marble fallback for Antarctic satellite gaps', () => {
+    const scene = readFileSync(new URL('./Scene.tsx', import.meta.url), 'utf8')
+    const surface = scene.slice(scene.indexOf('function EarthSurface'), scene.indexOf('function EarthGlobe'))
+    expect(surface).toContain('southPolarWeight')
+    expect(surface).toContain('polarCoverageA')
+    expect(surface).toContain('polarCoverageB')
+    expect(surface).toContain('mix(globalCoverageA,polarCoverageA,southPolarWeight)')
+    expect(surface).toContain('polarNightBase')
+  })
+
+  it('renders enabled small bodies in orbit mode as well as flight mode', () => {
+    const scene = readFileSync(new URL('./Scene.tsx', import.meta.url), 'utf8')
+    const orbitEarth = scene.slice(scene.indexOf('function OrbitEarth'), scene.indexOf('function NasaModel'))
+    expect(orbitEarth).toContain('showSmallBodies && solarContextVisible')
+    expect(orbitEarth).toContain('<SmallBodies')
+    expect(orbitEarth).toContain("band=\"solar\"")
+    const smallBodies = scene.slice(scene.indexOf('function SmallBodies'), scene.indexOf('function FlightWorld'))
+    expect(smallBodies).toContain('forceLabel sunDirection')
   })
 
   it('uses only observed clouds from NASA imagery', () => {

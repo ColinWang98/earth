@@ -7,7 +7,6 @@ import { advanceSimulationTime, getSolarSystemSnapshot, MAX_SIMULATION_TIME, MIN
 import { formatDateInput, parseDateInput, PLAYBACK_RATES, type SimulationState } from './simulation'
 import { distanceAu, effectiveObserverPosition, nearestBody, type NavigationState } from './navigation'
 import { getSmallBodyStates, SMALL_BODIES } from './smallBodies'
-import type { TargetIndicatorState } from './navigation'
 import { percentile95 } from './performance'
 
 const AU_KM = 149_597_870.7
@@ -46,9 +45,7 @@ export function App() {
   const [skyReady, setSkyReady] = useState(false)
   const [preset, setPreset] = useState<CameraPresetId>('orbit')
   const [showSmallBodies, setShowSmallBodies] = useState(true)
-  const [search, setSearch] = useState('')
   const [frameP95, setFrameP95] = useState<number | null>(null)
-  const [targetIndicator, setTargetIndicator] = useState<TargetIndicatorState | null>(null)
   const [observation, setObservation] = useState<EarthObservationStatus>({ source: 'Blue Marble', label: '正在准备 NASA 卫星影像…', fallback: true, resolution: /OculusBrowser|Android|iPhone|iPad/i.test(navigator.userAgent) ? '2K' : '4K' })
   const [simulation, setSimulation] = useState<SimulationState>(() => ({ utcMs: Date.now(), paused: false, rate: 1, selectedObjectId: 'earth' }))
   const [navigation, setNavigation] = useState<NavigationState>(() => nearEarthNavigation(Date.now()))
@@ -70,8 +67,8 @@ export function App() {
 
   const snapshot = useMemo(() => getSolarSystemSnapshot(simulation.utcMs), [simulation.utcMs])
   const smallBodyStates = useMemo(() => getSmallBodyStates(simulation.utcMs), [simulation.utcMs])
-  const searchableBodies = useMemo(() => [...snapshot, ...smallBodyStates], [snapshot, smallBodyStates])
-  const selectedBody = searchableBodies.find((body) => body.id === simulation.selectedObjectId)
+  const allBodies = useMemo(() => [...snapshot, ...smallBodyStates], [snapshot, smallBodyStates])
+  const selectedBody = allBodies.find((body) => body.id === simulation.selectedObjectId)
   const earth = snapshot.find((body) => body.id === 'earth')!
   const observerPosition = effectiveObserverPosition(navigation, earth.positionAu, earth.radiusKm / AU_KM * 4.6)
   const nearest = nearestBody(observerPosition, snapshot)
@@ -94,14 +91,6 @@ export function App() {
   const selectBody = useCallback((id: string) => {
     setSimulation((current) => ({ ...current, selectedObjectId: id }))
   }, [])
-  const submitSearch = (event: React.FormEvent) => {
-    event.preventDefault()
-    const query = search.trim().toLowerCase()
-    const body = searchableBodies.find((item) => item.id === query || item.label === search.trim() || item.englishLabel.toLowerCase() === query)
-    if (!body) return
-    selectBody(body.id)
-    setSearch('')
-  }
 
   const flightAvailable = !('ontouchstart' in window) || /OculusBrowser/i.test(navigator.userAgent)
   const distanceLabel = nearest.distanceAu < 0.01 ? `${Math.round(nearest.distanceAu * AU_KM).toLocaleString()} km` : `${nearest.distanceAu.toFixed(3)} AU`
@@ -121,8 +110,6 @@ export function App() {
             preset={preset}
             quality={quality}
             selectedObjectId={simulation.selectedObjectId}
-            targetPositionAu={selectedBody?.positionAu}
-            targetDistanceLabel={selectedDistanceLabel}
             showSmallBodies={showSmallBodies}
             frameP95Ms={frameP95}
             utcMs={simulation.utcMs}
@@ -131,7 +118,6 @@ export function App() {
             onPresetChange={setPreset}
             onSelect={selectBody}
             onSkyReady={handleSkyReady}
-            onTargetIndicator={setTargetIndicator}
           />
         </Suspense></XR>
       </PerformanceMonitor>
@@ -146,8 +132,6 @@ export function App() {
       <button onClick={resetNow}>回到现在</button>
     </section>
 
-    <form className="object-search" onSubmit={submitSearch}><input aria-label="搜索天体" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="搜索太阳、行星、月球或小天体" /><button type="submit">定位</button></form>
-
     <section className="control-panel" aria-label="场景控制">
       {navigation.controlMode === 'orbit' && <div className="preset-panel" aria-label="观察机位">{CAMERA_PRESETS.map((item) => <button className={preset === item.id ? 'active' : ''} key={item.id} onClick={() => setPreset(item.id)}>{item.label}</button>)}</div>}
       {flightAvailable && <button className={navigation.controlMode === 'flight' ? 'active' : ''} onClick={() => setControlMode(navigation.controlMode === 'flight' ? 'orbit' : 'flight')}>{navigation.controlMode === 'flight' ? '退出自由飞行' : '自由飞行'}</button>}
@@ -156,9 +140,7 @@ export function App() {
       <button onClick={() => xrStore.enterVR()}>进入 VR</button>
     </section>
 
-    {navigation.controlMode === 'flight' && <section className="flight-help"><strong>自由飞行</strong><span>WASD 移动 · Q/E 升降 · Shift 加速 · 滚轮调速 · Esc 释放鼠标</span><span>搜索只定位方向，不会移动相机</span></section>}
-
-    {targetIndicator && selectedBody && selectedBody.id !== nearest.id && <div className={`target-indicator ${targetIndicator.onScreen ? 'on-screen' : 'off-screen'}`} style={{ left: `${(targetIndicator.screenPosition[0] + 1) * 50}%`, top: `${(1 - targetIndicator.screenPosition[1]) * 50}%` }}><i style={{ transform: `rotate(${-targetIndicator.directionAngleRad}rad)` }}>➤</i><strong>{selectedBody.label}</strong><span>{targetIndicator.distanceLabel}</span></div>}
+    {navigation.controlMode === 'flight' && <section className="flight-help"><strong>自由飞行</strong><span>WASD 移动 · Q/E 升降 · Shift 加速 · 滚轮调速 · Esc 释放鼠标</span></section>}
 
     {selectedBody && <aside className="object-details"><small>SELECTED OBJECT</small><h2>{selectedBody.label}</h2><p>{selectedBody.englishLabel}</p><dl><div><dt>观察距离</dt><dd>{selectedDistanceLabel}</dd></div><div><dt>{selectedIsSmallBody ? '显示方式' : '平均半径'}</dt><dd>{selectedIsSmallBody ? '视觉放大标记' : `${selectedBody.radiusKm.toLocaleString()} km`}</dd></div><div><dt>日心坐标 (AU)</dt><dd>{selectedCoordinates}</dd></div><div><dt>数据时刻</dt><dd>{dataTimestamp} UTC</dd></div><div><dt>位置数据</dt><dd>{selectedIsSmallBody ? 'NASA/JPL SBDB' : 'Astronomy Engine / JPL'}</dd></div></dl></aside>}
 
@@ -170,6 +152,7 @@ export function App() {
       <span>最近：{nearest.label} · {distanceLabel} · {navigation.speedAuPerSecond < 0.001 ? `${Math.round(navigation.speedAuPerSecond * AU_KM).toLocaleString()} km/s` : `${navigation.speedAuPerSecond.toFixed(3)} AU/s`}</span>
       <span>{frameP95 == null ? '正在采样帧时间…' : `p95 ${frameP95.toFixed(1)} ms · ${Math.round(1_000 / frameP95)} fps · DPR ${dprCap.toFixed(2)}`}</span>
       <span>{skyReady ? `HYG 星空 · ${quality === 'desktop' ? '1,250' : '850'} 颗亮星` : '正在加载 HYG 星空…'}</span>
+      {showSmallBodies && navigation.controlMode === 'orbit' && <span>七颗重点小天体 · 滚轮拉远至太阳系尺度显示</span>}
     </footer>
   </main>
 }
