@@ -5,6 +5,10 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "test": "vitest run --exclude scripts/capture-paths.test.cjs",
+    "data:gaia": "node scripts/build-gaia-catalog.mjs",
+    "data:small-bodies": "node scripts/build-small-bodies.mjs",
+    "validate:horizons": "node scripts/validate-horizons.ts",
     "build": "tsc -b && vite build",
     "preview": "vite preview"
   },
@@ -13,6 +17,7 @@
     "@react-three/fiber": "^9.3.0",
     "@react-three/xr": "^6.6.25",
     "@types/three": "^0.181.0",
+    "astronomy-engine": "^2.1.19",
     "react": "^19.1.1",
     "react-dom": "^19.1.1",
     "three": "^0.181.0",
@@ -23,6 +28,7 @@
     "@types/react-dom": "^19.1.7",
     "@vitejs/plugin-react": "^5.0.2",
     "typescript": "~5.8.3",
-    "vite": "^7.1.7"
+    "vite": "^7.1.7",
+    "vitest": "^4.1.10"
   }
 }

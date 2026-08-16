@@ -1,0 +1,26 @@
+[
+  {
+    "id": "proxima-centauri",
+    "label": "比邻星",
+    "englishLabel": "Proxima Centauri · α Cen C",
+    "sourceId": "5853498713190525696",
+    "distancePc": 1.3019705311704333,
+    "radialVelocityKnown": true
+  },
+  {
+    "id": "sirius",
+    "label": "天狼星",
+    "englishLabel": "Sirius",
+    "sourceId": "2947050466531873024",
+    "distancePc": 2.6703012063129745,
+    "radialVelocityKnown": false
+  },
+  {
+    "id": "barnards-star",
+    "label": "巴纳德星",
+    "englishLabel": "Barnard's Star",
+    "sourceId": "4472832130942575872",
+    "distancePc": 1.828233981355542,
+    "radialVelocityKnown": true
+  }
+]

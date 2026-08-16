@@ -3,6 +3,7 @@ import * as THREE from 'three'
 import { OrbitControls, Text } from '@react-three/drei'
 import { useFrame, useThree } from '@react-three/fiber'
 import type { OrbitControls as OrbitControlsImpl } from 'three-stdlib'
+import { getEarthFixedSunDirection, getSolarSystemSnapshot } from './astro'
 
 export const CAMERA_PRESETS = [
   { id: 'orbit', label: '默认轨道', position: [0, 1.25, 9], earthRotation: 0, duration: 1.5 },
@@ -20,6 +21,7 @@ type Props = {
   forecastClouds: boolean
   preset: CameraPresetId
   quality: Quality
+  utcMs: number
   onPresetChange: (preset: CameraPresetId) => void
   onSkyReady: () => void
   onCloudStatus: (status: string) => void
@@ -31,8 +33,6 @@ const OCEAN_MASK = `${import.meta.env.BASE_URL}assets/earth-specular.jpg`
 const CLOUD_MAP = `${import.meta.env.BASE_URL}assets/earth-clouds-real.jpg`
 const CHINA_DETAIL_MAP = `${import.meta.env.BASE_URL}assets/east-asia-blue-marble-4k.jpg`
 const MOON_MAP = `${import.meta.env.BASE_URL}assets/moon.jpg`
-const LIGHT_POSITION = new THREE.Vector3(-22, 0.4, 18)
-const MOON_POSITION: [number, number, number] = [-22, 8, -16]
 const STAR_CATALOG = `${import.meta.env.BASE_URL}assets/stars/hyg-bright-stars.bin`
 const EARTH_RADIUS = 2.25
 
@@ -64,10 +64,10 @@ function useLazyTexture(url: string, active: boolean, quality: Quality) {
   return texture
 }
 
-function Atmosphere({ segments }: { segments: number }) {
+function Atmosphere({ segments, sunDirection }: { segments: number, sunDirection: THREE.Vector3 }) {
   return <mesh renderOrder={4}>
     <sphereGeometry args={[2.305, segments, segments]} />
-    <shaderMaterial transparent depthWrite={false} side={THREE.BackSide} blending={THREE.AdditiveBlending} vertexShader={`
+    <shaderMaterial transparent depthWrite={false} side={THREE.BackSide} blending={THREE.AdditiveBlending} uniforms={{ sunDirection: { value: sunDirection } }} vertexShader={`
       varying vec3 vWorldNormal; varying vec3 vWorldPosition;
       void main() {
         vWorldNormal = normalize(mat3(modelMatrix) * normal);
@@ -75,10 +75,10 @@ function Atmosphere({ segments }: { segments: number }) {
         gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
       }
     `} fragmentShader={`
-      varying vec3 vWorldNormal; varying vec3 vWorldPosition;
+      uniform vec3 sunDirection; varying vec3 vWorldNormal; varying vec3 vWorldPosition;
       void main() {
         vec3 viewDirection = normalize(cameraPosition - vWorldPosition);
-        vec3 sunlight = normalize(vec3(-22.0, 0.4, 18.0));
+        vec3 sunlight = normalize(sunDirection);
         float horizon = pow(1.0 - max(dot(vWorldNormal, viewDirection), 0.0), 4.6);
         float daylight = smoothstep(-0.15, 0.85, dot(vWorldNormal, sunlight));
         vec3 color = mix(vec3(0.015, 0.055, 0.16), vec3(0.11, 0.43, 1.0), daylight);
@@ -88,12 +88,12 @@ function Atmosphere({ segments }: { segments: number }) {
   </mesh>
 }
 
-function Aurora({ segments }: { segments: number }) {
+function Aurora({ segments, sunDirection }: { segments: number, sunDirection: THREE.Vector3 }) {
   const material = useRef<THREE.ShaderMaterial>(null)
   useFrame((_, delta) => { if (material.current) material.current.uniforms.time.value += delta })
   return <mesh renderOrder={5}>
     <sphereGeometry args={[2.33, segments, segments]} />
-    <shaderMaterial ref={material} transparent depthWrite={false} blending={THREE.AdditiveBlending} uniforms={{ time: { value: 0 } }} vertexShader={`
+    <shaderMaterial ref={material} transparent depthWrite={false} blending={THREE.AdditiveBlending} uniforms={{ time: { value: 0 }, sunDirection: { value: sunDirection } }} vertexShader={`
       varying vec3 vWorldNormal; varying vec3 vWorldPosition;
       void main() {
         vWorldNormal = normalize(mat3(modelMatrix) * normal);
@@ -101,9 +101,9 @@ function Aurora({ segments }: { segments: number }) {
         gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
       }
     `} fragmentShader={`
-      uniform float time; varying vec3 vWorldNormal; varying vec3 vWorldPosition;
+      uniform float time; uniform vec3 sunDirection; varying vec3 vWorldNormal; varying vec3 vWorldPosition;
       void main() {
-        vec3 sun = normalize(vec3(-22.0, 0.4, 18.0));
+        vec3 sun = normalize(sunDirection);
         vec3 viewDirection = normalize(cameraPosition - vWorldPosition);
         float polar = abs(vWorldNormal.y);
         float nightSide = pow(1.0 - smoothstep(-0.08, 0.34, dot(vWorldNormal, sun)), 1.08);
@@ -197,18 +197,18 @@ function useForecastCloudMask(enabled: boolean, onStatus: (status: string) => vo
   return texture
 }
 
-function CloudLayer({ cloudMap, forecastMask, radius, density, speed, offset, segments }: { cloudMap: THREE.Texture, forecastMask: THREE.Texture | null, radius: number, density: number, speed: number, offset: number, segments: number }) {
+function CloudLayer({ cloudMap, forecastMask, radius, density, speed, offset, segments, sunDirection }: { cloudMap: THREE.Texture, forecastMask: THREE.Texture | null, radius: number, density: number, speed: number, offset: number, segments: number, sunDirection: THREE.Vector3 }) {
   const material = useRef<THREE.ShaderMaterial>(null)
   const fallbackMask = useMemo(() => new THREE.DataTexture(new Uint8Array([255]), 1, 1, THREE.RedFormat), [])
   useEffect(() => () => fallbackMask.dispose(), [fallbackMask])
   useFrame((_, delta) => { if (material.current) material.current.uniforms.time.value += delta * speed })
   return <mesh renderOrder={3}>
     <sphereGeometry args={[radius, segments, segments]} />
-    <shaderMaterial ref={material} transparent depthWrite={false} uniforms={{ cloudMap: { value: cloudMap }, forecastMask: { value: forecastMask ?? fallbackMask }, time: { value: offset }, density: { value: density }, usesForecast: { value: forecastMask ? 1 : 0 } }} vertexShader={`
+    <shaderMaterial ref={material} transparent depthWrite={false} uniforms={{ cloudMap: { value: cloudMap }, forecastMask: { value: forecastMask ?? fallbackMask }, time: { value: offset }, density: { value: density }, usesForecast: { value: forecastMask ? 1 : 0 }, sunDirection: { value: sunDirection } }} vertexShader={`
       varying vec2 vUv; varying vec3 vWorldNormal;
       void main() { vUv = uv; vWorldNormal = normalize(mat3(modelMatrix) * normal); gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }
     `} fragmentShader={`
-      uniform sampler2D cloudMap; uniform sampler2D forecastMask; uniform float time; uniform float density; uniform float usesForecast;
+      uniform sampler2D cloudMap; uniform sampler2D forecastMask; uniform float time; uniform float density; uniform float usesForecast; uniform vec3 sunDirection;
       varying vec2 vUv; varying vec3 vWorldNormal;
       void main() {
         vec2 cloudUv = vec2(fract(vUv.x + time), vUv.y);
@@ -216,7 +216,7 @@ function CloudLayer({ cloudMap, forecastMask, radius, density, speed, offset, se
         float regional = texture2D(forecastMask, vUv).r;
         float shape = smoothstep(0.28, 0.8, cloud);
         float alpha = shape * density * mix(1.0, regional, usesForecast);
-        float daylight = smoothstep(-0.16, 0.24, dot(vWorldNormal, normalize(vec3(-22.0, 0.4, 18.0))));
+        float daylight = smoothstep(-0.16, 0.24, dot(vWorldNormal, normalize(sunDirection)));
         vec3 color = mix(vec3(0.02, 0.026, 0.04), vec3(0.82, 0.85, 0.87), daylight);
         gl_FragColor = vec4(color, alpha * mix(0.10, 0.60, daylight));
       }
@@ -224,10 +224,10 @@ function CloudLayer({ cloudMap, forecastMask, radius, density, speed, offset, se
   </mesh>
 }
 
-function EarthSurface({ dayMap, nightMap, oceanMask, segments }: { dayMap: THREE.Texture, nightMap: THREE.Texture, oceanMask: THREE.Texture, segments: number }) {
+function EarthSurface({ dayMap, nightMap, oceanMask, segments, sunDirection }: { dayMap: THREE.Texture, nightMap: THREE.Texture, oceanMask: THREE.Texture, segments: number, sunDirection: THREE.Vector3 }) {
   return <mesh castShadow receiveShadow>
     <sphereGeometry args={[EARTH_RADIUS, segments, segments]} />
-    <shaderMaterial uniforms={{ dayMap: { value: dayMap }, nightMap: { value: nightMap }, oceanMask: { value: oceanMask } }} vertexShader={`
+    <shaderMaterial uniforms={{ dayMap: { value: dayMap }, nightMap: { value: nightMap }, oceanMask: { value: oceanMask }, sunDirection: { value: sunDirection } }} vertexShader={`
       varying vec2 vUv; varying vec3 vWorldNormal; varying vec3 vWorldPosition;
       void main() {
         vUv = uv;
@@ -236,10 +236,10 @@ function EarthSurface({ dayMap, nightMap, oceanMask, segments }: { dayMap: THREE
         gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
       }
     `} fragmentShader={`
-      uniform sampler2D dayMap; uniform sampler2D nightMap; uniform sampler2D oceanMask;
+      uniform sampler2D dayMap; uniform sampler2D nightMap; uniform sampler2D oceanMask; uniform vec3 sunDirection;
       varying vec2 vUv; varying vec3 vWorldNormal; varying vec3 vWorldPosition;
       void main() {
-        vec3 sunlight = normalize(vec3(-22.0, 0.4, 18.0));
+        vec3 sunlight = normalize(sunDirection);
         float illumination = dot(vWorldNormal, sunlight);
         float daylight = smoothstep(-0.16, 0.24, illumination);
         vec3 day = pow(texture2D(dayMap, vUv).rgb, vec3(0.86)) * 1.38;
@@ -256,7 +256,7 @@ function EarthSurface({ dayMap, nightMap, oceanMask, segments }: { dayMap: THREE
   </mesh>
 }
 
-function ChinaDetail({ map, active, quality }: { map: THREE.Texture | null, active: boolean, quality: Quality }) {
+function ChinaDetail({ map, active, quality, sunDirection }: { map: THREE.Texture | null, active: boolean, quality: Quality, sunDirection: THREE.Vector3 }) {
   const material = useRef<THREE.ShaderMaterial>(null)
   const opacity = useRef(0)
   useFrame((_, delta) => {
@@ -267,14 +267,14 @@ function ChinaDetail({ map, active, quality }: { map: THREE.Texture | null, acti
   const segments = quality === 'desktop' ? 96 : 56
   return <mesh renderOrder={2}>
     <sphereGeometry args={[EARTH_RADIUS + 0.003, segments, segments, Math.PI * 1.5, Math.PI * 0.25, Math.PI * 0.195, Math.PI * 0.222]} />
-    <shaderMaterial ref={material} transparent depthWrite={false} uniforms={{ detailMap: { value: map }, opacity: { value: 0 } }} vertexShader={`
+    <shaderMaterial ref={material} transparent depthWrite={false} uniforms={{ detailMap: { value: map }, opacity: { value: 0 }, sunDirection: { value: sunDirection } }} vertexShader={`
       varying vec2 vUv; varying vec3 vWorldNormal;
       void main() { vUv = uv; vWorldNormal = normalize(mat3(modelMatrix) * normal); gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }
     `} fragmentShader={`
-      uniform sampler2D detailMap; uniform float opacity;
+      uniform sampler2D detailMap; uniform float opacity; uniform vec3 sunDirection;
       varying vec2 vUv; varying vec3 vWorldNormal;
       void main() {
-        float daylight = smoothstep(-0.16, 0.24, dot(vWorldNormal, normalize(vec3(-22.0, 0.4, 18.0))));
+        float daylight = smoothstep(-0.16, 0.24, dot(vWorldNormal, normalize(sunDirection)));
         float edge = smoothstep(0.0, 0.07, vUv.x) * smoothstep(0.0, 0.07, 1.0 - vUv.x) * smoothstep(0.0, 0.09, vUv.y) * smoothstep(0.0, 0.09, 1.0 - vUv.y);
         vec3 detail = pow(texture2D(detailMap, vUv).rgb, vec3(0.58)) * vec3(1.12, 1.18, 1.25);
         float localExposure = mix(0.38, 1.0, daylight);
@@ -284,7 +284,7 @@ function ChinaDetail({ map, active, quality }: { map: THREE.Texture | null, acti
   </mesh>
 }
 
-function Earth({ preset, forecastClouds, onCloudStatus, quality }: { preset: CameraPresetId, forecastClouds: boolean, onCloudStatus: (status: string) => void, quality: Quality }) {
+function Earth({ preset, forecastClouds, onCloudStatus, quality, sunDirection }: { preset: CameraPresetId, forecastClouds: boolean, onCloudStatus: (status: string) => void, quality: Quality, sunDirection: THREE.Vector3 }) {
   const earth = useRef<THREE.Group>(null)
   const day = useTexture(DAY_MAP, quality)
   const night = useTexture(NIGHT_MAP, quality)
@@ -297,21 +297,21 @@ function Earth({ preset, forecastClouds, onCloudStatus, quality }: { preset: Cam
   const cloudCoverage = preset === 'china' ? 0.48 : 1
   useFrame((_, delta) => { if (earth.current) earth.current.rotation.y = THREE.MathUtils.damp(earth.current.rotation.y, item.earthRotation, 3 / item.duration, delta) })
   return <group ref={earth}>
-    <EarthSurface dayMap={day} nightMap={night} oceanMask={oceanMask} segments={segments} />
-    <ChinaDetail map={chinaDetail} active={preset === 'china'} quality={quality} />
-    <CloudLayer cloudMap={cloud} forecastMask={forecastMask} radius={2.274} density={0.28 * cloudCoverage} speed={0.0017} offset={0} segments={segments} />
-    <CloudLayer cloudMap={cloud} forecastMask={forecastMask} radius={2.287} density={0.085 * cloudCoverage} speed={-0.0009} offset={0.19} segments={segments} />
-    <CloudLayer cloudMap={cloud} forecastMask={forecastMask} radius={2.303} density={0.035 * cloudCoverage} speed={0.00045} offset={0.47} segments={segments} />
-    <Atmosphere segments={segments} />
-    <Aurora segments={segments} />
+    <EarthSurface dayMap={day} nightMap={night} oceanMask={oceanMask} segments={segments} sunDirection={sunDirection} />
+    <ChinaDetail map={chinaDetail} active={preset === 'china'} quality={quality} sunDirection={sunDirection} />
+    <CloudLayer cloudMap={cloud} forecastMask={forecastMask} radius={2.274} density={0.28 * cloudCoverage} speed={0.0017} offset={0} segments={segments} sunDirection={sunDirection} />
+    <CloudLayer cloudMap={cloud} forecastMask={forecastMask} radius={2.287} density={0.085 * cloudCoverage} speed={-0.0009} offset={0.19} segments={segments} sunDirection={sunDirection} />
+    <CloudLayer cloudMap={cloud} forecastMask={forecastMask} radius={2.303} density={0.035 * cloudCoverage} speed={0.00045} offset={0.47} segments={segments} sunDirection={sunDirection} />
+    <Atmosphere segments={segments} sunDirection={sunDirection} />
+    <Aurora segments={segments} sunDirection={sunDirection} />
   </group>
 }
 
-function Moon({ quality }: { quality: Quality }) {
+function Moon({ quality, position }: { quality: Quality, position: [number, number, number] }) {
   const moon = useRef<THREE.Mesh>(null)
   const map = useTexture(MOON_MAP, quality)
   useFrame((_, delta) => { if (moon.current) moon.current.rotation.y += delta * 0.01 })
-  return <mesh ref={moon} position={MOON_POSITION}><sphereGeometry args={[0.58, quality === 'desktop' ? 64 : 40, quality === 'desktop' ? 64 : 40]} /><meshStandardMaterial map={map} roughness={1} /></mesh>
+  return <mesh ref={moon} position={position}><sphereGeometry args={[0.58, quality === 'desktop' ? 64 : 40, quality === 'desktop' ? 64 : 40]} /><meshStandardMaterial map={map} roughness={1} /></mesh>
 }
 
 function starColor(index: number, target: THREE.Color) {
@@ -353,13 +353,12 @@ function StarCatalog({ onReady, quality }: { onReady: () => void, quality: Quali
   return <points geometry={geometry} frustumCulled={false}><pointsMaterial ref={material} size={quality === 'desktop' ? 0.95 : 0.78} sizeAttenuation={false} vertexColors transparent opacity={0.5} depthWrite={false} depthTest /></points>
 }
 
-const labels = [
-  { position: [-1.9, -1.9, 0.7] as [number, number, number], title: '昼夜分界线', sub: 'Terminator line' },
-  { position: [-22, 8.9, -16] as [number, number, number], title: '月球', sub: 'Moon · enlarged view' },
-]
-
-function Annotations({ visible }: { visible: boolean }) {
+function Annotations({ visible, moonPosition }: { visible: boolean, moonPosition: [number, number, number] }) {
   if (!visible) return null
+  const labels = [
+    { position: [-1.9, -1.9, 0.7] as [number, number, number], title: '昼夜分界线', sub: 'Terminator line' },
+    { position: [moonPosition[0], moonPosition[1] + 0.9, moonPosition[2]] as [number, number, number], title: '月球', sub: 'Moon · enlarged view' },
+  ]
   return <group>{labels.map(({ position, title, sub }) => <group key={title} position={position}>
     <mesh position={[0, -0.12, 0]}><planeGeometry args={[1.76, 0.72]} /><meshBasicMaterial color="#07111d" transparent opacity={0.68} /></mesh>
     <Text fontSize={0.16} color="#dbeeff" anchorX="center" position={[0, 0.11, 0.01]}>{title}</Text>
@@ -373,7 +372,7 @@ function presetOrbit(preset: CameraPresetId) {
   return { distance, theta: Math.atan2(-x, -z), phi: Math.asin(THREE.MathUtils.clamp((0.25 - y) / distance, -0.75, 0.75)) }
 }
 
-function XRMovement({ preset, forecastClouds, onCloudStatus, quality }: { preset: CameraPresetId, forecastClouds: boolean, onCloudStatus: (status: string) => void, quality: Quality }) {
+function XRMovement({ preset, forecastClouds, onCloudStatus, quality, sunDirection, moonPosition }: { preset: CameraPresetId, forecastClouds: boolean, onCloudStatus: (status: string) => void, quality: Quality, sunDirection: THREE.Vector3, moonPosition: [number, number, number] }) {
   const world = useRef<THREE.Group>(null)
   const { gl } = useThree()
   const orbit = useRef({ ...presetOrbit('orbit'), active: false })
@@ -394,7 +393,7 @@ function XRMovement({ preset, forecastClouds, onCloudStatus, quality }: { preset
     const { theta, phi, distance } = orbit.current
     world.current.position.set(-Math.sin(theta) * Math.cos(phi) * distance, -Math.sin(phi) * distance + 0.25, -Math.cos(theta) * Math.cos(phi) * distance)
   })
-  return <group ref={world}><Earth preset={preset} forecastClouds={forecastClouds} onCloudStatus={onCloudStatus} quality={quality} /><Moon quality={quality} /></group>
+  return <group ref={world}><Earth preset={preset} forecastClouds={forecastClouds} onCloudStatus={onCloudStatus} quality={quality} sunDirection={sunDirection} /><Moon quality={quality} position={moonPosition} /></group>
 }
 
 function CameraDirector({ preset, controls, motion }: { preset: CameraPresetId, controls: React.RefObject<OrbitControlsImpl | null>, motion: React.MutableRefObject<Motion> }) {
@@ -414,6 +413,18 @@ function CameraDirector({ preset, controls, motion }: { preset: CameraPresetId, 
   return null
 }
 
+function CaptureCamera() {
+  const { camera } = useThree()
+  useFrame(() => {
+    const position = (window as Window & { __EARTH_CAPTURE_CAMERA__?: [number, number, number] }).__EARTH_CAPTURE_CAMERA__
+    if (!position) return
+    camera.position.set(...position)
+    camera.lookAt(0, 0, 0)
+    camera.updateMatrixWorld()
+  })
+  return null
+}
+
 function VRPresetMenu({ onPresetChange }: { onPresetChange: (preset: CameraPresetId) => void }) {
   const { gl } = useThree()
   const [presenting, setPresenting] = useState(gl.xr.isPresenting)
@@ -429,19 +440,28 @@ function VRPresetMenu({ onPresetChange }: { onPresetChange: (preset: CameraPrese
   </group>)}</group>
 }
 
-export function Scene({ annotations, forecastClouds, preset, quality, onPresetChange, onSkyReady, onCloudStatus }: Props) {
+export function Scene({ annotations, forecastClouds, preset, quality, utcMs, onPresetChange, onSkyReady, onCloudStatus }: Props) {
   const controls = useRef<OrbitControlsImpl | null>(null)
   const motion = useRef<Motion>({ active: false, target: new THREE.Vector3(...CAMERA_PRESETS[0].position), duration: 1.5 })
+  const sunDirection = useMemo(() => new THREE.Vector3(...getEarthFixedSunDirection(utcMs)), [utcMs])
+  const moonPosition = useMemo(() => {
+    const snapshot = getSolarSystemSnapshot(utcMs)
+    const earth = snapshot.find((body) => body.id === 'earth')!
+    const moon = snapshot.find((body) => body.id === 'moon')!
+    return new THREE.Vector3(moon.positionAu[0] - earth.positionAu[0], moon.positionAu[2] - earth.positionAu[2], earth.positionAu[1] - moon.positionAu[1]).normalize().multiplyScalar(28.3).toArray() as [number, number, number]
+  }, [utcMs])
+  const lightPosition = useMemo(() => sunDirection.clone().multiplyScalar(30), [sunDirection])
   useEffect(() => { document.title = 'Earth Observation / 自由太空观察' }, [])
   return <>
     <color attach="background" args={['#010207']} />
     <ambientLight intensity={0.09} color="#c6d7e7" />
-    <directionalLight position={LIGHT_POSITION} intensity={3.15} color="#fff7df" />
+    <directionalLight position={lightPosition} intensity={3.15} color="#fff7df" />
     <StarCatalog onReady={onSkyReady} quality={quality} />
-    <XRMovement preset={preset} forecastClouds={forecastClouds} onCloudStatus={onCloudStatus} quality={quality} />
+    <XRMovement preset={preset} forecastClouds={forecastClouds} onCloudStatus={onCloudStatus} quality={quality} sunDirection={sunDirection} moonPosition={moonPosition} />
     <CameraDirector preset={preset} controls={controls} motion={motion} />
     <VRPresetMenu onPresetChange={onPresetChange} />
-    <Annotations visible={annotations} />
+    <Annotations visible={annotations} moonPosition={moonPosition} />
     <OrbitControls ref={controls} enableDamping dampingFactor={0.06} minDistance={2.72} maxDistance={15} target={[0, 0, 0]} onStart={() => { motion.current.active = false }} />
+    <CaptureCamera />
   </>
 }

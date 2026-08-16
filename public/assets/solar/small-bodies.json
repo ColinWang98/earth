@@ -1,0 +1,90 @@
+{
+  "source": "NASA/JPL SBDB",
+  "generatedAt": "2026-08-16T06:57:21.343Z",
+  "bodies": [
+    {
+      "id": "20000001",
+      "label": "谷神星",
+      "englishLabel": "1 Ceres (A801 AA)",
+      "epochJd": 2461200.5,
+      "semiMajorAu": 2.77,
+      "eccentricity": 0.0797,
+      "inclinationDeg": 10.6,
+      "ascendingNodeDeg": 80.2,
+      "argumentOfPerihelionDeg": 73.3,
+      "meanAnomalyDeg": 274
+    },
+    {
+      "id": "20000004",
+      "label": "灶神星",
+      "englishLabel": "4 Vesta (A807 FA)",
+      "epochJd": 2461200.5,
+      "semiMajorAu": 2.36,
+      "eccentricity": 0.0902,
+      "inclinationDeg": 7.14,
+      "ascendingNodeDeg": 104,
+      "argumentOfPerihelionDeg": 151,
+      "meanAnomalyDeg": 81.2
+    },
+    {
+      "id": "20000433",
+      "label": "爱神星",
+      "englishLabel": "433 Eros (A898 PA)",
+      "epochJd": 2461200.5,
+      "semiMajorAu": 1.46,
+      "eccentricity": 0.223,
+      "inclinationDeg": 10.8,
+      "ascendingNodeDeg": 304,
+      "argumentOfPerihelionDeg": 179,
+      "meanAnomalyDeg": 62.5
+    },
+    {
+      "id": "20101955",
+      "label": "贝努",
+      "englishLabel": "101955 Bennu (1999 RQ36)",
+      "epochJd": 2455562.5,
+      "semiMajorAu": 1.13,
+      "eccentricity": 0.204,
+      "inclinationDeg": 6.03,
+      "ascendingNodeDeg": 2.06,
+      "argumentOfPerihelionDeg": 66.2,
+      "meanAnomalyDeg": 102
+    },
+    {
+      "id": "20099942",
+      "label": "阿波菲斯",
+      "englishLabel": "99942 Apophis (2004 MN4)",
+      "epochJd": 2461200.5,
+      "semiMajorAu": 0.922,
+      "eccentricity": 0.191,
+      "inclinationDeg": 3.34,
+      "ascendingNodeDeg": 204,
+      "argumentOfPerihelionDeg": 127,
+      "meanAnomalyDeg": 175
+    },
+    {
+      "id": "1000036",
+      "label": "哈雷彗星",
+      "englishLabel": "1P/Halley",
+      "epochJd": 2439875.5,
+      "semiMajorAu": 17.9,
+      "eccentricity": 0.968,
+      "inclinationDeg": 162,
+      "ascendingNodeDeg": 59.1,
+      "argumentOfPerihelionDeg": 112,
+      "meanAnomalyDeg": 274
+    },
+    {
+      "id": "1000025",
+      "label": "恩克彗星",
+      "englishLabel": "2P/Encke",
+      "epochJd": 2459855.5,
+      "semiMajorAu": 2.22,
+      "eccentricity": 0.848,
+      "inclinationDeg": 11.4,
+      "ascendingNodeDeg": 334,
+      "argumentOfPerihelionDeg": 187,
+      "meanAnomalyDeg": 246
+    }
+  ]
+}

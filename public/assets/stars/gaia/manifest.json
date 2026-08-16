@@ -1,0 +1,27 @@
+{
+  "schemaVersion": 1,
+  "source": "ESA Gaia DR3",
+  "epoch": 2016,
+  "generatedAt": "2026-08-16T06:49:08.777Z",
+  "totalSourceRows": 35312,
+  "files": [
+    {
+      "id": "near",
+      "url": "./assets/stars/gaia/near.bin",
+      "count": 5312,
+      "bytes": 254992
+    },
+    {
+      "id": "mid",
+      "url": "./assets/stars/gaia/mid.bin",
+      "count": 5294,
+      "bytes": 254128
+    },
+    {
+      "id": "far",
+      "url": "./assets/stars/gaia/far.bin",
+      "count": 12000,
+      "bytes": 576016
+    }
+  ]
+}
