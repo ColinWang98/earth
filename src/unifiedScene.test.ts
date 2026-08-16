@@ -39,16 +39,17 @@ describe('unified earth and solar-system application boundary', () => {
     expect(scene).not.toContain('<meshBasicMaterial color={color} transparent opacity={0.11}')
   })
 
-  it('derives the atmospheric rim from spherical-shell optical depth', () => {
+  it('uses a depth-tested 3D volumetric shell instead of a camera-facing ring', () => {
     const scene = readFileSync(new URL('./Scene.tsx', import.meta.url), 'utf8')
     const atmosphere = scene.slice(scene.indexOf('function Atmosphere'), scene.indexOf('function EarthSurface'))
-    expect(atmosphere).toContain('Billboard')
-    expect(atmosphere).toContain('ringGeometry')
-    expect(atmosphere).toContain('tangentPathLength')
+    expect(atmosphere).toContain('sphereGeometry')
+    expect(atmosphere).toContain('raySphereIntersection')
+    expect(atmosphere).toContain('sampleDensity')
     expect(atmosphere).toContain('opticalDepth')
-    expect(atmosphere).toContain('projectedInnerRadius')
-    expect(atmosphere).toContain('projectedOuterRadius')
-    expect(atmosphere).not.toContain('sphereGeometry')
+    expect(atmosphere).toContain("quality === 'desktop' ? 3 : 2")
+    expect(atmosphere).not.toContain('Billboard')
+    expect(atmosphere).not.toContain('ringGeometry')
+    expect(atmosphere).not.toContain('depthTest={false}')
   })
 
   it('renders a structured solar surface and layered corona', () => {
