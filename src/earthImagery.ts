@@ -12,6 +12,12 @@ export type EarthImageryChoice =
 
 export type EarthResolution = { width: number; height: number; label: '2K' | '4K' | '8K' }
 
+export type EarthImageryRequest = { id: number; utcMs: number }
+
+export function createEarthImageryRequest(previous: EarthImageryRequest | undefined, utcMs: number): EarthImageryRequest {
+  return { id: (previous?.id ?? 0) + 1, utcMs }
+}
+
 export function selectEarthResolution({ quality, closeView, maxTextureSize, deviceMemoryGb, frameP95Ms }: { quality: 'desktop' | 'mobile'; closeView: boolean; maxTextureSize: number; deviceMemoryGb?: number; frameP95Ms?: number | null }): EarthResolution {
   if (quality === 'mobile') return { width: 2048, height: 1024, label: '2K' }
   const supports8K = closeView && maxTextureSize >= 8192 && (deviceMemoryGb ?? 0) >= 8 && (frameP95Ms == null || frameP95Ms <= 15)

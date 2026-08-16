@@ -34,6 +34,24 @@ describe('unified earth and solar-system application boundary', () => {
     expect(surface).toContain('polarNightBase')
   })
 
+  it('preloads a bundled NASA observation and fetches newer imagery only on request', () => {
+    const html = readFileSync(new URL('../index.html', import.meta.url), 'utf8')
+    const app = readFileSync(new URL('./App.tsx', import.meta.url), 'utf8')
+    const scene = readFileSync(new URL('./Scene.tsx', import.meta.url), 'utf8')
+    expect(html).toContain('rel="preload"')
+    expect(html).toContain('assets/earth-nasa-viirs-2026-08-15-4k.jpg')
+    expect(app).toContain('更新卫星影像')
+    expect(app).toContain('createEarthImageryRequest')
+    expect(app).toContain('imageryRequest={imageryRequest}')
+    expect(scene).toContain('if (requestId == null || requestUtcMs == null)')
+    expect(scene).toContain('NASA_SNAPSHOT_MAP')
+    expect(scene).toContain('预存 NASA VIIRS')
+    const imageryHook = scene.slice(scene.indexOf('function useEarthObservationTexture'), scene.indexOf('function Atmosphere'))
+    expect(imageryHook).toContain('const resolutionRef = useRef(resolution)')
+    expect(imageryHook).toContain('const requestedResolution = resolutionRef.current')
+    expect(imageryHook).not.toContain('resolution.height, resolution.label, resolution.width')
+  })
+
   it('renders enabled small bodies in orbit mode as well as flight mode', () => {
     const scene = readFileSync(new URL('./Scene.tsx', import.meta.url), 'utf8')
     const orbitEarth = scene.slice(scene.indexOf('function OrbitEarth'), scene.indexOf('function NasaModel'))

@@ -11,6 +11,7 @@ canvas { touch-action: none; }
 button { color: #eaf6ff; border: 1px solid #79b4dc66; border-radius: 999px; background: #0a1a2cbb; backdrop-filter: blur(10px); padding: 10px 15px; font: inherit; font-size: 13px; cursor: pointer; transition: background .2s, transform .2s; }
 button:hover { background: #163654ee; transform: translateY(-1px); }
 button.active { background: #285b83ee; border-color: #b4e7ff; }
+button:disabled { cursor: wait; opacity: .58; transform: none; }
 .control-panel > button:last-child { background: #2b7598d9; border-color: #afe7ff; }
 footer { position: fixed; left: 30px; bottom: 26px; display: grid; max-width: 54vw; gap: 3px; color: #94b6cc; font-size: 11px; pointer-events: none; }
 .time-panel { position: fixed; top: 24px; right: 24px; display: flex; align-items: center; gap: 7px; padding: 7px; border: 1px solid #5f819933; border-radius: 14px; background: #040b15b5; backdrop-filter: blur(14px); }

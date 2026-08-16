@@ -4,7 +4,7 @@ import { useFrame, useThree } from '@react-three/fiber'
 import type { OrbitControls as OrbitControlsImpl } from 'three-stdlib'
 import * as THREE from 'three'
 import { getEarthFixedSunDirection, getMoonOrbitPath, getPlanetOrbitPath, getSolarSystemSnapshot, type CelestialBodyId, type CelestialBodyState } from './astro'
-import { buildGibsWmsUrl, chooseEarthImagery, disposeReplacedTextures, estimateImageCoverage, getEarthResolutionFallbacks, getImageryBlendFrames, selectEarthResolution, type EarthResolution } from './earthImagery'
+import { buildGibsWmsUrl, chooseEarthImagery, disposeReplacedTextures, estimateImageCoverage, getEarthResolutionFallbacks, getImageryBlendFrames, selectEarthResolution, type EarthImageryRequest, type EarthResolution } from './earthImagery'
 import { adaptiveFlightSpeed, compressedRenderDistance, nearestBody, selectSpaceBand, type AuVector, type NavigationState, type SpaceBand } from './navigation'
 import { getKeplerOrbitPath, propagateKeplerOrbit, type KeplerOrbit } from './orbits'
 import { SMALL_BODIES, type SmallBodyRecord } from './smallBodies'
@@ -26,6 +26,7 @@ export interface EarthObservationStatus {
   label: string
   date?: string
   fallback: boolean
+  loading: boolean
   resolution: EarthResolution['label']
 }
 
@@ -35,6 +36,7 @@ type Props = {
   preset: CameraPresetId
   quality: Quality
   selectedObjectId?: string
+  imageryRequest?: EarthImageryRequest
   showSmallBodies: boolean
   frameP95Ms: number | null
   utcMs: number
@@ -48,6 +50,8 @@ type Props = {
 const AU_KM = 149_597_870.7
 const J2000_MS = Date.UTC(2000, 0, 1, 12)
 const DAY_MAP = `${import.meta.env.BASE_URL}assets/earth-blue-marble-5k.jpg`
+const NASA_SNAPSHOT_MAP = `${import.meta.env.BASE_URL}assets/earth-nasa-viirs-2026-08-15-4k.jpg`
+const NASA_SNAPSHOT_DATE = '2026-08-15'
 const NIGHT_MAP = `${import.meta.env.BASE_URL}assets/earth-night.png`
 const OCEAN_MASK = `${import.meta.env.BASE_URL}assets/earth-specular.jpg`
 const MOON_MAP = `${import.meta.env.BASE_URL}assets/moon.jpg`
@@ -118,29 +122,42 @@ function makeObservationTexture(image: HTMLImageElement, quality: Quality, gener
   return texture
 }
 
-function useEarthObservationTexture(utcMs: number, quality: Quality, closeView: boolean, frameP95Ms: number | null, onStatus: (status: EarthObservationStatus) => void) {
+function useEarthObservationTexture(imageryRequest: EarthImageryRequest | undefined, quality: Quality, closeView: boolean, frameP95Ms: number | null, onStatus: (status: EarthObservationStatus) => void) {
   const fallback = useTexture(DAY_MAP, quality)
+  const snapshot = useTexture(NASA_SNAPSHOT_MAP, quality)
   const { gl } = useThree()
   const resolution = selectEarthResolution({ quality, closeView, maxTextureSize: gl.capabilities.maxTextureSize, deviceMemoryGb: (navigator as Navigator & { deviceMemory?: number }).deviceMemory, frameP95Ms })
-  const frames = getImageryBlendFrames(utcMs)
-  const [textures, setTextures] = useState<EarthObservationTextures>({ base: fallback, primary: fallback, secondary: fallback, mix: 0, resolution })
+  const resolutionRef = useRef(resolution)
+  resolutionRef.current = resolution
+  const requestId = imageryRequest?.id
+  const requestUtcMs = imageryRequest?.utcMs
+  const frames = getImageryBlendFrames(requestUtcMs ?? Date.parse(`${NASA_SNAPSHOT_DATE}T12:00:00.000Z`))
+  const [textures, setTextures] = useState<EarthObservationTextures>({ base: fallback, primary: snapshot, secondary: snapshot, mix: 0, resolution })
   const owned = useRef<THREE.Texture[]>([])
 
   useEffect(() => {
     let cancelled = false
     let retireTimer: number | undefined
-    const choice = chooseEarthImagery(Date.parse(`${frames.primaryDate}T12:00:00.000Z`))
-    const useFallback = (label: string) => {
+    const requestedResolution = resolutionRef.current
+    const useSnapshot = (label: string) => {
       if (cancelled) return
-      setTextures({ base: fallback, primary: fallback, secondary: fallback, mix: 0, resolution })
-      onStatus({ source: 'NASA Blue Marble', label: `${label} · ${resolution.label} · 无实时云层`, fallback: true, resolution: resolution.label })
+      const previous = owned.current
+      owned.current = []
+      setTextures({ base: fallback, primary: snapshot, secondary: snapshot, mix: 0, resolution: requestedResolution })
+      onStatus({ source: 'NASA GIBS · VIIRS/Suomi NPP · 预存', label: `${label} · 4K`, date: NASA_SNAPSHOT_DATE, fallback: true, loading: false, resolution: '4K' })
+      if (previous.length) retireTimer = window.setTimeout(() => disposeReplacedTextures(previous), 1_500)
     }
     const load = async () => {
-      if (choice.kind === 'fallback') {
-        useFallback(choice.reason === 'future-date' ? '未来日期无卫星观测 · 使用 Blue Marble' : '卫星时代之前 · 使用 Blue Marble')
+      if (requestId == null || requestUtcMs == null) {
+        useSnapshot(`${NASA_SNAPSHOT_DATE} 预存 NASA VIIRS 真彩`)
         return
       }
-      onStatus({ source: 'NASA GIBS', label: choice.kind === 'recent' ? `正在寻找最新完整卫星观测 · ${resolution.label}…` : `正在加载 ${choice.date} 卫星观测 · ${resolution.label}…`, fallback: false, resolution: resolution.label })
+      const choice = chooseEarthImagery(requestUtcMs)
+      if (choice.kind === 'fallback') {
+        useSnapshot('无可用卫星观测 · 保留预存 NASA 快照')
+        return
+      }
+      onStatus({ source: 'NASA GIBS', label: choice.kind === 'recent' ? `正在寻找最新完整卫星观测 · ${requestedResolution.label}…` : `正在加载 ${choice.date} 卫星观测 · ${requestedResolution.label}…`, fallback: false, loading: true, resolution: requestedResolution.label })
       try {
         let date: string | undefined
         if (choice.kind === 'recent') {
@@ -149,15 +166,15 @@ function useEarthObservationTexture(utcMs: number, quality: Quality, closeView: 
           }
         } else if (await probeCoverage(choice.layer, choice.date) >= 0.08) date = choice.date
         if (!date) throw new Error('No useful coverage')
-        let actualResolution = resolution
+        let actualResolution = requestedResolution
         let primaryImage: HTMLImageElement | undefined
-        for (const candidate of getEarthResolutionFallbacks(resolution)) {
+        for (const candidate of getEarthResolutionFallbacks(requestedResolution)) {
           try {
             primaryImage = await loadImage(buildGibsWmsUrl(choice.layer, date, candidate.width, candidate.height))
             actualResolution = candidate
             break
           } catch {
-            // Retry a failed 8K request at 4K before using Blue Marble.
+            // Retry a failed 8K request at 4K before restoring the bundled snapshot.
           }
         }
         if (!primaryImage) throw new Error('Unable to load observation image')
@@ -174,15 +191,15 @@ function useEarthObservationTexture(utcMs: number, quality: Quality, closeView: 
         owned.current = nextOwned
         setTextures({ base: fallback, primary, secondary, mix: secondaryImage ? frames.mix : 0, resolution: actualResolution })
         const delayHours = Math.max(0, (Date.now() - Date.parse(`${date}T12:00:00.000Z`)) / 3_600_000)
-        onStatus({ source: choice.layer.startsWith('VIIRS') ? 'NASA GIBS · VIIRS/Suomi NPP' : 'NASA GIBS · MODIS/Terra', label: `${choice.kind === 'recent' ? `${date} 近实时卫星真彩 · 约 ${Math.round(delayHours)} 小时延迟` : `${date} 历史卫星真彩`} · ${actualResolution.label} · 真彩图含实测云层`, date, fallback: false, resolution: actualResolution.label })
+        onStatus({ source: choice.layer.startsWith('VIIRS') ? 'NASA GIBS · VIIRS/Suomi NPP' : 'NASA GIBS · MODIS/Terra', label: `${choice.kind === 'recent' ? `${date} 近实时卫星真彩 · 约 ${Math.round(delayHours)} 小时延迟` : `${date} 历史卫星真彩`} · ${actualResolution.label} · 真彩图含实测云层`, date, fallback: false, loading: false, resolution: actualResolution.label })
         if (previous.length) retireTimer = window.setTimeout(() => disposeReplacedTextures(previous), 1_500)
       } catch {
-        useFallback('NASA GIBS 暂不可用 · 使用 Blue Marble')
+        useSnapshot('NASA GIBS 暂不可用 · 保留预存 NASA 快照')
       }
     }
     void load()
     return () => { cancelled = true; if (retireTimer) window.clearTimeout(retireTimer) }
-  }, [fallback, frames.primaryDate, frames.secondaryDate, onStatus, quality, resolution.height, resolution.label, resolution.width])
+  }, [fallback, frames.primaryDate, frames.secondaryDate, onStatus, quality, requestId, requestUtcMs, snapshot])
 
   useEffect(() => () => disposeReplacedTextures(owned.current), [])
   return { ...textures, mix: textures.secondary === textures.primary ? 0 : frames.mix }
@@ -745,9 +762,9 @@ function VRPresetMenu({ onPresetChange }: { onPresetChange: (preset: CameraPrese
   </group>)}</group>
 }
 
-export function Scene({ annotations, navigation, preset, quality, selectedObjectId, showSmallBodies, frameP95Ms, utcMs, onNavigationChange, onObservationStatus, onPresetChange, onSelect, onSkyReady }: Props) {
+export function Scene({ annotations, navigation, preset, quality, selectedObjectId, imageryRequest, showSmallBodies, frameP95Ms, utcMs, onNavigationChange, onObservationStatus, onPresetChange, onSelect, onSkyReady }: Props) {
   const closeView = navigation.controlMode === 'flight' ? navigation.band === 'surface' : preset === 'atmosphere' || preset === 'clouds' || preset === 'china'
-  const dayMap = useEarthObservationTexture(utcMs, quality, closeView, frameP95Ms, onObservationStatus)
+  const dayMap = useEarthObservationTexture(imageryRequest, quality, closeView, frameP95Ms, onObservationStatus)
   const sunDirection = useMemo(() => new THREE.Vector3(...getEarthFixedSunDirection(utcMs)), [utcMs])
   useEffect(() => { document.title = '地球与太阳系观察 / Live Earth & Solar System' }, [])
   return <>
