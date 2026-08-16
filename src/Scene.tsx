@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { OrbitControls, Text, useGLTF } from '@react-three/drei'
+import { Billboard, OrbitControls, Text, useGLTF } from '@react-three/drei'
 import { useFrame, useThree } from '@react-three/fiber'
 import type { OrbitControls as OrbitControlsImpl } from 'three-stdlib'
 import * as THREE from 'three'
@@ -192,43 +192,77 @@ function useEarthObservationTexture(utcMs: number, quality: Quality, closeView: 
 }
 
 function Atmosphere({ radius, segments, sunDirection = DEFAULT_ATMOSPHERE_SUN_DIRECTION, color = '#3b92ff' }: { radius: number; segments: number; sunDirection?: THREE.Vector3; color?: string }) {
+  const outerRadius = radius * 1.018
+  const billboard = useRef<THREE.Group>(null)
+  const worldCenter = useMemo(() => new THREE.Vector3(), [])
+  const worldScale = useMemo(() => new THREE.Vector3(), [])
+  const cameraWorldPosition = useMemo(() => new THREE.Vector3(), [])
   const uniforms = useMemo(() => ({
     atmosphereColor: { value: new THREE.Color(color) },
     sunDirection: { value: sunDirection.clone() },
-  }), [color])
-  useFrame(() => { uniforms.sunDirection.value.copy(sunDirection) })
-  return <mesh renderOrder={4} scale={1.04}>
-    <sphereGeometry args={[radius, Math.min(segments, 96), Math.min(segments, 72)]} />
-    <shaderMaterial transparent depthWrite={false} side={THREE.BackSide} blending={THREE.AdditiveBlending} uniforms={uniforms} vertexShader={`
-      varying vec3 vWorldPosition; varying vec3 vWorldNormal;
-      void main(){
-        vec4 worldPosition=modelMatrix*vec4(position,1.0);
-        vWorldPosition=worldPosition.xyz;
-        vWorldNormal=normalize(mat3(modelMatrix)*normal);
-        gl_Position=projectionMatrix*viewMatrix*worldPosition;
-      }
-    `} fragmentShader={`
-      uniform vec3 atmosphereColor; uniform vec3 sunDirection;
-      varying vec3 vWorldPosition; varying vec3 vWorldNormal;
-      void main(){
-        vec3 viewDirection=normalize(cameraPosition-vWorldPosition);
-        vec3 lightDirection=normalize(sunDirection);
-        float viewCosine=abs(dot(normalize(vWorldNormal),viewDirection));
-        float horizon=pow(1.0-viewCosine,2.35);
-        float solarAltitude=dot(normalize(vWorldNormal),lightDirection);
-        float dayLight=smoothstep(-0.32,0.18,solarAltitude);
-        float rayleighStrength=horizon*(0.16+0.84*dayLight);
-        float forwardScatter=pow(max(dot(viewDirection,lightDirection),0.0),10.0);
-        float mieStrength=horizon*forwardScatter*dayLight;
-        float sunsetWarmth=horizon*smoothstep(-0.22,0.04,solarAltitude)*(1.0-smoothstep(0.04,0.42,solarAltitude));
-        vec3 rayleighColor=atmosphereColor*rayleighStrength;
-        vec3 mieColor=vec3(0.95,0.78,0.55)*mieStrength*0.7;
-        vec3 sunsetColor=vec3(1.0,0.34,0.06)*sunsetWarmth*0.42;
-        float alpha=clamp(rayleighStrength*0.56+mieStrength*0.32+sunsetWarmth*0.4,0.0,0.82);
-        gl_FragColor=vec4(rayleighColor+mieColor+sunsetColor,alpha);
-      }
-    `} />
-  </mesh>
+    innerRadius: { value: radius },
+    outerRadius: { value: outerRadius },
+    projectedInnerRadius: { value: radius },
+    projectedOuterRadius: { value: outerRadius },
+  }), [color, outerRadius, radius])
+  useFrame(({ camera }) => {
+    uniforms.sunDirection.value.copy(sunDirection)
+    if (!billboard.current) return
+    billboard.current.getWorldPosition(worldCenter)
+    billboard.current.getWorldScale(worldScale)
+    camera.getWorldPosition(cameraWorldPosition)
+    const scale = Math.max(Math.abs(worldScale.x), Math.abs(worldScale.y), Math.abs(worldScale.z))
+    const distance = Math.max(cameraWorldPosition.distanceTo(worldCenter), outerRadius * scale * 1.001)
+    const innerRatio = Math.min(radius * scale / distance, 0.999)
+    const outerRatio = Math.min(outerRadius * scale / distance, 0.999)
+    uniforms.projectedInnerRadius.value = radius / Math.sqrt(1 - innerRatio * innerRatio)
+    uniforms.projectedOuterRadius.value = outerRadius / Math.sqrt(1 - outerRatio * outerRatio)
+  })
+  return <Billboard ref={billboard} follow>
+    <mesh renderOrder={4}>
+      <ringGeometry args={[radius, outerRadius, Math.min(segments, 96)]} />
+      <shaderMaterial transparent depthTest={false} depthWrite={false} side={THREE.DoubleSide} blending={THREE.AdditiveBlending} uniforms={uniforms} vertexShader={`
+        uniform float innerRadius; uniform float outerRadius; uniform float projectedInnerRadius; uniform float projectedOuterRadius; uniform vec3 sunDirection;
+        varying float vOpticalDepth; varying float vSolarAltitude; varying float vScatteringCosine;
+        void main(){
+          float normalizedHeight=clamp((length(position.xy)-innerRadius)/(outerRadius-innerRadius),0.0,1.0);
+          float density=exp(-normalizedHeight*5.5);
+          float tangentPathLength=sqrt(max(1.0-normalizedHeight,0.0));
+          float opticalDepth=1.0-exp(-tangentPathLength*density*3.2);
+          vec2 radialDirection=normalize(position.xy);
+          float projectedRadius=mix(projectedInnerRadius,projectedOuterRadius,normalizedHeight);
+          vec3 projectedPosition=vec3(radialDirection*projectedRadius,position.z);
+          vec4 worldPosition=modelMatrix*vec4(projectedPosition,1.0);
+          vec3 sampleNormal=normalize(mat3(modelMatrix)*vec3(radialDirection,0.0));
+          vec3 rayDirection=normalize(worldPosition.xyz-cameraPosition);
+          vOpticalDepth=opticalDepth;
+          vSolarAltitude=dot(sampleNormal,normalize(sunDirection));
+          vScatteringCosine=dot(rayDirection,normalize(sunDirection));
+          gl_Position=projectionMatrix*viewMatrix*worldPosition;
+        }
+      `} fragmentShader={`
+        uniform vec3 atmosphereColor;
+        varying float vOpticalDepth; varying float vSolarAltitude; varying float vScatteringCosine;
+        void main(){
+          float dayLight=smoothstep(-0.055,0.16,vSolarAltitude);
+          float rayleighPhase=0.72+0.28*vScatteringCosine*vScatteringCosine;
+          float rayleighStrength=vOpticalDepth*dayLight*rayleighPhase;
+          float forwardScatter=max(vScatteringCosine,0.0);
+          float forwardSquared=forwardScatter*forwardScatter;
+          float forwardFourth=forwardSquared*forwardSquared;
+          float forwardEighth=forwardFourth*forwardFourth;
+          forwardScatter=forwardEighth*forwardEighth*forwardSquared;
+          float mieStrength=vOpticalDepth*forwardScatter*dayLight*0.16;
+          float sunsetWarmth=vOpticalDepth*smoothstep(-0.07,-0.005,vSolarAltitude)*(1.0-smoothstep(-0.005,0.075,vSolarAltitude));
+          vec3 rayleighColor=atmosphereColor*rayleighStrength;
+          vec3 mieColor=vec3(1.0,0.78,0.48)*mieStrength;
+          vec3 sunsetColor=vec3(1.0,0.24,0.035)*sunsetWarmth*0.18;
+          float alpha=clamp(rayleighStrength*0.52+mieStrength*0.3+sunsetWarmth*0.12,0.0,0.58);
+          gl_FragColor=vec4(rayleighColor+mieColor+sunsetColor,alpha);
+        }
+      `} />
+    </mesh>
+  </Billboard>
 }
 
 function EarthSurface({ baseMap, dayMaps, dayMix, nightMap, oceanMask, radius, segments, sunDirection }: { baseMap: THREE.Texture; dayMaps: [THREE.Texture, THREE.Texture]; dayMix: number; nightMap: THREE.Texture; oceanMask: THREE.Texture; radius: number; segments: number; sunDirection: THREE.Vector3 }) {
