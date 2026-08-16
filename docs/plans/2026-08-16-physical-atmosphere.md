@@ -4,7 +4,7 @@
 
 **Goal:** Replace the neon-like atmospheric rim with a thin, sun-driven spherical-shell scattering approximation.
 
-**Architecture:** Replace the transparent full-sphere shell with a camera-facing narrow ring. Correct its apparent radii for perspective, then use tangent path length, exponential density, optical depth, and narrow day/terminator masks.
+**Architecture:** Render a depth-tested 3D outer shell. Intersect each camera ray with the outer atmosphere and solid surface, then integrate low-sample exponential density only through the visible atmosphere segment.
 
 **Tech Stack:** React, React Three Fiber, Three.js, GLSL, Vitest
 
@@ -15,20 +15,20 @@
 **Files:**
 - Modify: `src/unifiedScene.test.ts`
 
-1. Add a test requiring `Billboard`, `ringGeometry`, `tangentPathLength`, and `opticalDepth` in `Scene.tsx`.
-2. Assert the atmosphere no longer uses a full `sphereGeometry` shell.
-3. Run `npm.cmd test -- --run src/unifiedScene.test.ts` and confirm the new test fails for the missing thin-ring terms.
+1. Add a test requiring `sphereGeometry`, `raySphereIntersection`, `sampleDensity`, and `opticalDepth` in `Scene.tsx`.
+2. Assert the atmosphere does not use `Billboard`, `ringGeometry`, or disabled depth testing.
+3. Run `npm.cmd test -- --run src/unifiedScene.test.ts` and confirm the new test fails for the missing volumetric-shell terms.
 
 ### Task 2: Replace the atmosphere shader
 
 **Files:**
 - Modify: `src/Scene.tsx`
 
-1. Add inner, outer, and perspective-corrected radius uniforms.
-2. Render only the atmospheric annulus as a camera-facing ring.
-3. Convert normalized height and tangent path length to exponential optical depth.
+1. Add inner and outer world-radius values to the atmospheric shader.
+2. Render a back-sided outer sphere with normal depth testing and no depth writes.
+3. Intersect the view ray with both radii and integrate exponential density through the uncovered shell segment.
 4. Apply thin Rayleigh scattering on the lit side, weak Mie forward scatter, a narrow warm terminator, and strong night-side fade.
-5. Keep the visible atmosphere at `1.018` Earth radii.
+5. Keep the visible atmosphere at `1.025` Earth radii and use 3 desktop / 2 mobile samples.
 6. Run the focused test and confirm it passes.
 
 ### Task 3: Verify and publish
