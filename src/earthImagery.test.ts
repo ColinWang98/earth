@@ -1,11 +1,17 @@
 import { describe, expect, it } from 'vitest'
-import { buildGibsWmsUrl, chooseEarthImagery, disposeReplacedTextures, estimateImageCoverage, getEarthResolutionFallbacks, getImageryBlendFrames, getRecentProbeDates, selectEarthResolution } from './earthImagery'
+import { buildGibsWmsUrl, chooseEarthImagery, createEarthImageryRequest, disposeReplacedTextures, estimateImageCoverage, getEarthResolutionFallbacks, getImageryBlendFrames, getRecentProbeDates, selectEarthResolution } from './earthImagery'
 
 describe('NASA GIBS earth imagery', () => {
   const now = Date.UTC(2026, 7, 16, 8)
 
   it('probes today and the three preceding UTC dates for a current observation', () => {
     expect(getRecentProbeDates(now)).toEqual(['2026-08-16', '2026-08-15', '2026-08-14', '2026-08-13'])
+  })
+
+  it('snapshots the selected time only when the user requests new imagery', () => {
+    const first = createEarthImageryRequest(undefined, Date.UTC(2026, 7, 16, 9))
+    expect(first).toEqual({ id: 1, utcMs: Date.UTC(2026, 7, 16, 9) })
+    expect(createEarthImageryRequest(first, Date.UTC(2025, 0, 2))).toEqual({ id: 2, utcMs: Date.UTC(2025, 0, 2) })
   })
 
   it('selects VIIRS, MODIS, or Blue Marble according to the requested date', () => {

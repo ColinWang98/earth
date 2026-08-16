@@ -8,6 +8,7 @@ import { formatDateInput, parseDateInput, PLAYBACK_RATES, type SimulationState }
 import { distanceAu, effectiveObserverPosition, nearestBody, type NavigationState } from './navigation'
 import { getSmallBodyStates, SMALL_BODIES } from './smallBodies'
 import { percentile95 } from './performance'
+import { createEarthImageryRequest, type EarthImageryRequest } from './earthImagery'
 
 const AU_KM = 149_597_870.7
 const xrStore = createXRStore({ controller: { rayPointer: true, teleportPointer: false } })
@@ -46,7 +47,8 @@ export function App() {
   const [preset, setPreset] = useState<CameraPresetId>('orbit')
   const [showSmallBodies, setShowSmallBodies] = useState(true)
   const [frameP95, setFrameP95] = useState<number | null>(null)
-  const [observation, setObservation] = useState<EarthObservationStatus>({ source: 'Blue Marble', label: '正在准备 NASA 卫星影像…', fallback: true, resolution: /OculusBrowser|Android|iPhone|iPad/i.test(navigator.userAgent) ? '2K' : '4K' })
+  const [imageryRequest, setImageryRequest] = useState<EarthImageryRequest>()
+  const [observation, setObservation] = useState<EarthObservationStatus>({ source: 'NASA GIBS · VIIRS/Suomi NPP · 预存', label: '2026-08-15 预存 NASA VIIRS 真彩 · 4K', date: '2026-08-15', fallback: true, loading: false, resolution: '4K' })
   const [simulation, setSimulation] = useState<SimulationState>(() => ({ utcMs: Date.now(), paused: false, rate: 1, selectedObjectId: 'earth' }))
   const [navigation, setNavigation] = useState<NavigationState>(() => nearEarthNavigation(Date.now()))
   const [quality] = useState(() => /OculusBrowser|Android|iPhone|iPad/i.test(navigator.userAgent) ? 'mobile' as const : 'desktop' as const)
@@ -79,6 +81,7 @@ export function App() {
     if (parsed != null) setSimulation((current) => ({ ...current, utcMs: parsed }))
   }
   const resetNow = () => setSimulation((current) => ({ ...current, utcMs: Math.min(MAX_SIMULATION_TIME, Math.max(MIN_SIMULATION_TIME, Date.now())), paused: false, rate: 1 }))
+  const refreshEarthImagery = () => setImageryRequest((current) => createEarthImageryRequest(current, Date.now()))
   const setControlMode = (controlMode: NavigationState['controlMode']) => {
     if (controlMode === 'flight') {
       const next = nearEarthNavigation(simulation.utcMs)
@@ -110,6 +113,7 @@ export function App() {
             preset={preset}
             quality={quality}
             selectedObjectId={simulation.selectedObjectId}
+            imageryRequest={imageryRequest}
             showSmallBodies={showSmallBodies}
             frameP95Ms={frameP95}
             utcMs={simulation.utcMs}
@@ -130,6 +134,7 @@ export function App() {
       <input aria-label="模拟日期" type="date" min="1900-01-01" max="2100-12-31" value={formatDateInput(simulation.utcMs)} onChange={(event) => setDate(event.target.value)} />
       <select aria-label="播放速度" value={simulation.rate} onChange={(event) => setSimulation((current) => ({ ...current, rate: Number(event.target.value) }))}>{PLAYBACK_RATES.map((rate) => <option key={rate} value={rate}>{RATE_LABELS.get(rate)}</option>)}</select>
       <button onClick={resetNow}>回到现在</button>
+      <button disabled={observation.loading} onClick={refreshEarthImagery}>{observation.loading ? '正在更新…' : '更新卫星影像'}</button>
     </section>
 
     <section className="control-panel" aria-label="场景控制">
