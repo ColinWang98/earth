@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { propagateKeplerOrbit } from './orbits'
+import { getKeplerOrbitPath, propagateKeplerOrbit } from './orbits'
 
 describe('small-body orbit propagation', () => {
   it('propagates a circular one-AU orbit by a quarter period', () => {
@@ -9,5 +9,13 @@ describe('small-body orbit propagation', () => {
     expect(quarter[0]).toBeCloseTo(0, 5)
     expect(quarter[1]).toBeCloseTo(1, 5)
     expect(quarter[2]).toBeCloseTo(0, 8)
+  })
+
+  it('samples a finite inclined small-body orbit', () => {
+    const orbit = { epochJd: 2_451_545, semiMajorAu: 2.7, eccentricity: 0.12, inclinationDeg: 12, ascendingNodeDeg: 80, argumentOfPerihelionDeg: 73, meanAnomalyDeg: 20 }
+    const path = getKeplerOrbitPath(orbit, 72)
+    expect(path).toHaveLength(72)
+    expect(path.flat().every(Number.isFinite)).toBe(true)
+    expect(Math.max(...path.map((point) => point[2])) - Math.min(...path.map((point) => point[2]))).toBeGreaterThan(0.5)
   })
 })

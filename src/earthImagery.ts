@@ -10,6 +10,24 @@ export type EarthImageryChoice =
   | { kind: 'dated'; date: string; layer: typeof VIIRS_LAYER | typeof MODIS_LAYER }
   | { kind: 'fallback'; reason: 'outside-satellite-era' | 'future-date' }
 
+export type EarthResolution = { width: number; height: number; label: '2K' | '4K' | '8K' }
+
+export function selectEarthResolution({ quality, closeView, maxTextureSize, deviceMemoryGb, frameP95Ms }: { quality: 'desktop' | 'mobile'; closeView: boolean; maxTextureSize: number; deviceMemoryGb?: number; frameP95Ms?: number | null }): EarthResolution {
+  if (quality === 'mobile') return { width: 2048, height: 1024, label: '2K' }
+  const supports8K = closeView && maxTextureSize >= 8192 && (deviceMemoryGb ?? 0) >= 8 && (frameP95Ms == null || frameP95Ms <= 15)
+  return supports8K ? { width: 8192, height: 4096, label: '8K' } : { width: 4096, height: 2048, label: '4K' }
+}
+
+export function getEarthResolutionFallbacks(resolution: EarthResolution): EarthResolution[] {
+  return resolution.label === '8K'
+    ? [resolution, { width: 4096, height: 2048, label: '4K' }]
+    : [resolution]
+}
+
+export function disposeReplacedTextures(textures: Array<{ dispose: () => void }>) {
+  textures.forEach((texture) => texture.dispose())
+}
+
 function utcDate(utcMs: number) {
   return new Date(utcMs).toISOString().slice(0, 10)
 }
@@ -17,6 +35,17 @@ function utcDate(utcMs: number) {
 export function getRecentProbeDates(nowMs: number) {
   const start = Date.parse(`${utcDate(nowMs)}T00:00:00.000Z`)
   return Array.from({ length: 4 }, (_, index) => utcDate(start - index * DAY_MS))
+}
+
+export function getImageryBlendFrames(utcMs: number, nowMs = Date.now()): { primaryDate: string; secondaryDate?: string; mix: number } {
+  const primaryDate = utcDate(utcMs)
+  if (primaryDate >= utcDate(nowMs)) return { primaryDate, mix: 0 }
+  const dayStart = Date.parse(`${primaryDate}T00:00:00.000Z`)
+  return {
+    primaryDate,
+    secondaryDate: utcDate(dayStart + DAY_MS),
+    mix: (utcMs - dayStart) / DAY_MS,
+  }
 }
 
 export function chooseEarthImagery(utcMs: number, nowMs = Date.now()): EarthImageryChoice {

@@ -68,6 +68,16 @@ export function getPlanetOrbitPath(id: Exclude<CelestialBodyId, 'sun' | 'moon'>,
   return Array.from({ length: count }, (_, index) => eclipticPosition(definition.astronomyBody!, new Date(startMs + periodMs * index / count)))
 }
 
+export function getMoonOrbitPath(utcMs: number, samples: number): [number, number, number][] {
+  const count = Math.max(16, Math.floor(samples))
+  const periodMs = 27.321661 * 86_400_000
+  const startMs = utcMs - periodMs / 2
+  return Array.from({ length: count }, (_, index) => {
+    const vector = RotateVector(Rotation_EQJ_ECL(), GeoMoon(new Date(startMs + periodMs * index / count)))
+    return [vector.x, vector.y, vector.z]
+  })
+}
+
 export function getEarthFixedSunDirection(utcMs: number): [number, number, number] {
   const date = new Date(clampSimulationTime(utcMs))
   const equatorial = Equator(Body.Sun, date, new Observer(0, 0, 0), true, true)

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { buildGibsWmsUrl, chooseEarthImagery, estimateImageCoverage, getRecentProbeDates } from './earthImagery'
+import { buildGibsWmsUrl, chooseEarthImagery, disposeReplacedTextures, estimateImageCoverage, getEarthResolutionFallbacks, getImageryBlendFrames, getRecentProbeDates, selectEarthResolution } from './earthImagery'
 
 describe('NASA GIBS earth imagery', () => {
   const now = Date.UTC(2026, 7, 16, 8)
@@ -31,5 +31,29 @@ describe('NASA GIBS earth imagery', () => {
       0, 0, 0, 255,
     ])
     expect(estimateImageCoverage(pixels)).toBe(0.5)
+  })
+
+  it('uses 8K only for capable close desktop views and degrades under frame pressure', () => {
+    expect(selectEarthResolution({ quality: 'desktop', closeView: true, maxTextureSize: 16_384, deviceMemoryGb: 16, frameP95Ms: 10 })).toEqual({ width: 8192, height: 4096, label: '8K' })
+    expect(selectEarthResolution({ quality: 'desktop', closeView: true, maxTextureSize: 8192, deviceMemoryGb: 8, frameP95Ms: 18 })).toEqual({ width: 4096, height: 2048, label: '4K' })
+    expect(selectEarthResolution({ quality: 'mobile', closeView: true, maxTextureSize: 8192, deviceMemoryGb: 8, frameP95Ms: 8 })).toEqual({ width: 2048, height: 1024, label: '2K' })
+  })
+
+  it('retries an 8K observation at 4K before using the static fallback', () => {
+    expect(getEarthResolutionFallbacks({ width: 8192, height: 4096, label: '8K' }).map((entry) => entry.label)).toEqual(['8K', '4K'])
+    expect(getEarthResolutionFallbacks({ width: 4096, height: 2048, label: '4K' }).map((entry) => entry.label)).toEqual(['4K'])
+  })
+
+  it('releases every replaced GPU texture', () => {
+    const disposed: string[] = []
+    disposeReplacedTextures([{ dispose: () => disposed.push('primary') }, { dispose: () => disposed.push('secondary') }])
+    expect(disposed).toEqual(['primary', 'secondary'])
+  })
+
+  it('blends historical daily observations without requesting a future frame', () => {
+    const historical = getImageryBlendFrames(Date.UTC(2025, 0, 4, 6), now)
+    expect(historical).toEqual({ primaryDate: '2025-01-04', secondaryDate: '2025-01-05', mix: 0.25 })
+    const current = getImageryBlendFrames(Date.UTC(2026, 7, 16, 18), now)
+    expect(current).toEqual({ primaryDate: '2026-08-16', mix: 0 })
   })
 })

@@ -30,3 +30,9 @@ export function propagateKeplerOrbit(orbit: KeplerOrbit, julianDay: number): [nu
   const z = sinPerihelion * sinInclination * orbitalX + cosPerihelion * sinInclination * orbitalY
   return [x, y, z]
 }
+
+export function getKeplerOrbitPath(orbit: KeplerOrbit, samples: number): [number, number, number][] {
+  const count = Math.max(24, Math.floor(samples))
+  const periodDays = 365.256_898_3 * Math.pow(orbit.semiMajorAu, 1.5)
+  return Array.from({ length: count }, (_, index) => propagateKeplerOrbit(orbit, orbit.epochJd + periodDays * index / count))
+}

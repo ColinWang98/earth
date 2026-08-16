@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { adaptiveFlightSpeed, autopilotDuration, compressedRenderDistance, movingAutopilotPosition, nearestBody, selectSpaceBand } from './navigation'
+import { adaptiveFlightSpeed, compressedRenderDistance, getTargetIndicatorState, nearestBody, selectSpaceBand } from './navigation'
 
 describe('floating-origin navigation', () => {
   it('finds the nearest body in heliocentric AU coordinates', () => {
@@ -27,18 +27,19 @@ describe('floating-origin navigation', () => {
     expect(adaptiveFlightSpeed(0.0002) * 149_597_870.7).toBeLessThan(50)
   })
 
-  it('uses stable semantic bands and bounded autopilot durations', () => {
+  it('uses stable semantic bands', () => {
     expect(selectSpaceBand(0.00002)).toBe('surface')
     expect(selectSpaceBand(0.0002)).toBe('surface')
     expect(selectSpaceBand(0.002)).toBe('surface')
     expect(selectSpaceBand(0.02)).toBe('orbital')
     expect(selectSpaceBand(1)).toBe('solar')
-    expect(autopilotDuration(0.0001)).toBe(4)
-    expect(autopilotDuration(30)).toBe(12)
   })
 
-  it('tracks a moving target through the end of an autopilot cruise', () => {
-    const result = movingAutopilotPosition([0, 0, 0], [2, 1, 0], [1, 0, 0], 0.1, 1)
-    expect(result).toEqual([2.1, 1, 0])
+  it('keeps an off-screen target indicator on the viewport edge without moving the observer', () => {
+    expect(getTargetIndicatorState('mars', [1.8, 0.4, 0.5], '0.52 AU')).toEqual({
+      objectId: 'mars', onScreen: false, screenPosition: [0.88, 0.19555555555555557], directionAngleRad: Math.atan2(0.4, 1.8), distanceLabel: '0.52 AU',
+    })
+    expect(getTargetIndicatorState('earth', [0.2, -0.1, 0.2], '10,000 km').onScreen).toBe(true)
+    expect(getTargetIndicatorState('venus', [1.5, -0.5, 1.2], '1 AU').screenPosition[0]).toBeLessThan(0)
   })
 })

@@ -5,6 +5,7 @@ import {
   advanceSimulationTime,
   clampSimulationTime,
   getEarthFixedSunDirection,
+  getMoonOrbitPath,
   getPlanetOrbitPath,
   getSolarSystemSnapshot,
 } from './astro'
@@ -65,5 +66,14 @@ describe('three-dimensional planet orbit paths', () => {
     expect(path).toHaveLength(96)
     expect(path.flat().every(Number.isFinite)).toBe(true)
     expect(Math.max(...path.map((point) => point[2])) - Math.min(...path.map((point) => point[2]))).toBeGreaterThan(0.01)
+  })
+
+  it('samples the Moon orbit relative to Earth with its real inclination and distance', () => {
+    const path = getMoonOrbitPath(Date.UTC(2026, 0, 1), 96)
+    expect(path).toHaveLength(96)
+    const distances = path.map((point) => Math.hypot(...point))
+    expect(Math.min(...distances)).toBeGreaterThan(0.002)
+    expect(Math.max(...distances)).toBeLessThan(0.003)
+    expect(Math.max(...path.map((point) => point[2])) - Math.min(...path.map((point) => point[2]))).toBeGreaterThan(0.0001)
   })
 })
