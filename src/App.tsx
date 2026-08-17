@@ -1,8 +1,8 @@
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Canvas, useFrame } from '@react-three/fiber'
 import { PerformanceMonitor } from '@react-three/drei'
-import { XR, createXRStore } from '@react-three/xr'
-import { CAMERA_PRESETS, Scene, type CameraPresetId, type EarthObservationStatus } from './Scene'
+import { XR, XROrigin, createXRStore } from '@react-three/xr'
+import { CAMERA_PRESETS, Scene, VRPresetMenu, type CameraPresetId, type EarthObservationStatus } from './Scene'
 import { advanceSimulationTime, getSolarSystemSnapshot, MAX_SIMULATION_TIME, MIN_SIMULATION_TIME } from './astro'
 import { formatDateInput, parseDateInput, PLAYBACK_RATES, type SimulationState } from './simulation'
 import { distanceAu, effectiveObserverPosition, nearestBody, type NavigationState } from './navigation'
@@ -11,7 +11,7 @@ import { percentile95 } from './performance'
 import { createEarthImageryRequest, type EarthImageryRequest } from './earthImagery'
 
 const AU_KM = 149_597_870.7
-const xrStore = createXRStore({ controller: { rayPointer: true, teleportPointer: false } })
+const xrStore = createXRStore({ enterGrantedSession: false, controller: { rayPointer: true, teleportPointer: false } })
 const RATE_LABELS = new Map<number, string>([
   [-86_400, '−1 天/秒'], [-3_600, '−1 小时/秒'], [1, '实时 1×'], [3_600, '1 小时/秒'], [86_400, '1 天/秒'], [2_592_000, '30 天/秒'],
 ])
@@ -107,6 +107,7 @@ export function App() {
       <PerformanceMonitor flipflops={3} onDecline={() => setDprCap((current) => Math.max(quality === 'mobile' ? 0.9 : 1, current - 0.15))} onIncline={() => setDprCap((current) => Math.min(quality === 'mobile' ? 1.15 : 1.65, current + 0.08))}>
         <FrameProbe onSample={setFrameP95} />
         <XR store={xrStore}><Suspense fallback={null}>
+          <XROrigin position={[0, -1.6, 8]}><VRPresetMenu onPresetChange={setPreset} /></XROrigin>
           <Scene
             annotations={annotations}
             navigation={navigation}
@@ -119,7 +120,6 @@ export function App() {
             utcMs={simulation.utcMs}
             onNavigationChange={setNavigation}
             onObservationStatus={setObservation}
-            onPresetChange={setPreset}
             onSelect={selectBody}
             onSkyReady={handleSkyReady}
           />

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { OrbitControls, Text, useGLTF } from '@react-three/drei'
 import { useFrame, useThree } from '@react-three/fiber'
+import { IfInSessionMode, XRSpace } from '@react-three/xr'
 import type { OrbitControls as OrbitControlsImpl } from 'three-stdlib'
 import * as THREE from 'three'
 import { getEarthFixedSunDirection, getMoonOrbitPath, getPlanetOrbitPath, getSolarSystemSnapshot, type CelestialBodyId, type CelestialBodyState } from './astro'
@@ -42,7 +43,6 @@ type Props = {
   utcMs: number
   onNavigationChange: (state: NavigationState) => void
   onObservationStatus: (status: EarthObservationStatus) => void
-  onPresetChange: (preset: CameraPresetId) => void
   onSelect: (id: string) => void
   onSkyReady: () => void
 }
@@ -441,7 +441,9 @@ function OrbitEarth({ annotations, dayMap, preset, quality, selectedObjectId, sh
     {annotations && <><Text position={[0, 2.75, 0]} fontSize={0.18} color="#d9efff">NASA 近实时真彩地球</Text><Text position={[moonPosition.x, moonPosition.y + 0.9, moonPosition.z]} fontSize={0.16} color="#d9efff">月球 · 真实轨道方向</Text><Text position={[sunMarkerPosition.x, sunMarkerPosition.y + 1.8, sunMarkerPosition.z]} fontSize={0.18} color="#ffdca0">太阳方向示意</Text></>}
     {showSmallBodies && solarContextVisible ? <SmallBodies dayMap={dayMap} observer={solarObserver} band="solar" quality={quality} selectedObjectId={selectedObjectId} utcMs={utcMs} onSelect={onSelect} /> : null}
     <CameraDirector preset={preset} controls={controls} motion={motion} />
-    <OrbitControls ref={controls} enableDamping dampingFactor={0.06} minDistance={2.72} maxDistance={60} target={[0, 0, 0]} onStart={() => { motion.current.active = false }} />
+    <IfInSessionMode deny="immersive-vr">
+      <OrbitControls ref={controls} enableDamping dampingFactor={0.06} minDistance={2.72} maxDistance={60} target={[0, 0, 0]} onStart={() => { motion.current.active = false }} />
+    </IfInSessionMode>
   </>
 }
 
@@ -747,34 +749,26 @@ function FlightWorld({ dayMap, navigation, quality, selectedObjectId, showSmallB
   </>
 }
 
-function VRPresetMenu({ onPresetChange }: { onPresetChange: (preset: CameraPresetId) => void }) {
-  const { gl } = useThree()
-  const [presenting, setPresenting] = useState(gl.xr.isPresenting)
-  useEffect(() => {
-    const update = () => setPresenting(gl.xr.isPresenting)
-    gl.xr.addEventListener('sessionstart', update); gl.xr.addEventListener('sessionend', update)
-    return () => { gl.xr.removeEventListener('sessionstart', update); gl.xr.removeEventListener('sessionend', update) }
-  }, [gl])
-  if (!presenting) return null
-  return <group position={[0, 3.8, -1.4]}>{CAMERA_PRESETS.map((preset, index) => <group key={preset.id} position={[(index - 2) * 1.05, 0, -Math.abs(index - 2) * 0.2]} onClick={(event) => { event.stopPropagation(); onPresetChange(preset.id) }}>
+export function VRPresetMenu({ onPresetChange }: { onPresetChange: (preset: CameraPresetId) => void }) {
+  return <IfInSessionMode allow="immersive-vr"><XRSpace space="viewer"><group position={[0, -0.45, -1.4]}>{CAMERA_PRESETS.map((preset, index) => <group key={preset.id} position={[(index - 2) * 1.05, 0, -Math.abs(index - 2) * 0.2]} onClick={(event) => { event.stopPropagation(); onPresetChange(preset.id) }}>
     <mesh><planeGeometry args={[0.92, 0.34]} /><meshBasicMaterial color="#0a1b2d" transparent opacity={0.9} /></mesh>
     <Text fontSize={0.095} color="#dbeeff" anchorX="center" anchorY="middle" position={[0, 0, 0.01]}>{preset.label}</Text>
-  </group>)}</group>
+  </group>)}</group></XRSpace></IfInSessionMode>
 }
 
-export function Scene({ annotations, navigation, preset, quality, selectedObjectId, imageryRequest, showSmallBodies, frameP95Ms, utcMs, onNavigationChange, onObservationStatus, onPresetChange, onSelect, onSkyReady }: Props) {
+export function Scene({ annotations, navigation, preset, quality, selectedObjectId, imageryRequest, showSmallBodies, frameP95Ms, utcMs, onNavigationChange, onObservationStatus, onSelect, onSkyReady }: Props) {
   const closeView = navigation.controlMode === 'flight' ? navigation.band === 'surface' : preset === 'atmosphere' || preset === 'clouds' || preset === 'china'
   const dayMap = useEarthObservationTexture(imageryRequest, quality, closeView, frameP95Ms, onObservationStatus)
   const sunDirection = useMemo(() => new THREE.Vector3(...getEarthFixedSunDirection(utcMs)), [utcMs])
   useEffect(() => { document.title = '地球与太阳系观察 / Live Earth & Solar System' }, [])
   return <>
     <color attach="background" args={['#010207']} />
+    <mesh><sphereGeometry args={[320, 32, 16]} /><meshBasicMaterial color="#010207" side={THREE.BackSide} /></mesh>
     <ambientLight intensity={0.08} color="#b8cae0" />
     <directionalLight position={sunDirection.clone().multiplyScalar(80)} intensity={3.2} color="#fff7df" />
     <StarCatalog onReady={onSkyReady} quality={quality} />
     {navigation.controlMode === 'orbit'
       ? <OrbitEarth annotations={annotations} dayMap={dayMap} preset={preset} quality={quality} selectedObjectId={selectedObjectId} showSmallBodies={showSmallBodies} sunDirection={sunDirection} utcMs={utcMs} onSelect={onSelect} />
       : <FlightWorld dayMap={dayMap} navigation={navigation} quality={quality} selectedObjectId={selectedObjectId} showSmallBodies={showSmallBodies} sunDirection={sunDirection} utcMs={utcMs} onNavigationChange={onNavigationChange} onSelect={onSelect} />}
-    <VRPresetMenu onPresetChange={onPresetChange} />
   </>
 }

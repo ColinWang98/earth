@@ -108,4 +108,25 @@ describe('unified earth and solar-system application boundary', () => {
     const packageJson = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')) as { scripts: Record<string, string> }
     expect(packageJson.scripts['data:gaia']).toBeUndefined()
   })
+
+  it('enters only immersive VR and gives the headset a centered XR origin', () => {
+    const app = readFileSync(new URL('./App.tsx', import.meta.url), 'utf8')
+    expect(app).toContain('enterGrantedSession: false')
+    expect(app).toContain('XROrigin position={[0, -1.6, 8]}')
+  })
+
+  it('keeps desktop camera controls out of VR and anchors its menu to the viewer', () => {
+    const app = readFileSync(new URL('./App.tsx', import.meta.url), 'utf8')
+    const scene = readFileSync(new URL('./Scene.tsx', import.meta.url), 'utf8')
+    expect(scene).toContain('<IfInSessionMode deny="immersive-vr">')
+    expect(scene).toContain('<XRSpace space="viewer">')
+    expect(scene).toContain('position={[0, -0.45, -1.4]}')
+    expect(app).toContain('<XROrigin position={[0, -1.6, 8]}><VRPresetMenu')
+  })
+
+  it('renders an opaque space shell behind the stars', () => {
+    const scene = readFileSync(new URL('./Scene.tsx', import.meta.url), 'utf8')
+    expect(scene).toContain('<sphereGeometry args={[320, 32, 16]} />')
+    expect(scene).toContain('<meshBasicMaterial color="#010207" side={THREE.BackSide}')
+  })
 })
