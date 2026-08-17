@@ -1,0 +1,30 @@
+{
+  "credit": "NASA Visualization Technology Applications and Development (VTAD)",
+  "combinedBudgetBytes": 18000000,
+  "models": {
+    "ceres": {
+      "path": "assets/small-bodies/ceres.glb",
+      "source": "https://science.nasa.gov/resource/ceres-3d-model/",
+      "download": "https://assets.science.nasa.gov/content/dam/science/psd/solar/2023/09/c/Ceres_1_1000.glb",
+      "simplifyRatio": 0.12
+    },
+    "vesta": {
+      "path": "assets/small-bodies/vesta.glb",
+      "source": "https://science.nasa.gov/resource/vesta-3d-model/",
+      "download": "https://assets.science.nasa.gov/content/dam/science/psd/solar/2023/09/v/Vesta_1_100.glb",
+      "simplifyRatio": 0.2
+    },
+    "eros": {
+      "path": "assets/small-bodies/eros.glb",
+      "source": "https://science.nasa.gov/resource/eros-3d-model/",
+      "download": "https://assets.science.nasa.gov/content/dam/science/psd/solar/2023/09/e/Eros_1_10.glb",
+      "simplifyRatio": 0.35
+    },
+    "bennu": {
+      "path": "assets/small-bodies/bennu.glb",
+      "source": "https://science.nasa.gov/resource/bennu-3d-model/",
+      "download": "https://assets.science.nasa.gov/content/dam/science/psd/solar/2023/09/b/Bennu_1_1.glb",
+      "simplifyRatio": 0.5
+    }
+  }
+}
