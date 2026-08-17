@@ -36,6 +36,8 @@ npm run dev
 - 三维轨道由 Astronomy Engine 在所选日期附近按各行星公转周期采样，不使用共面圆环近似。
 - 近地观察可拉远查看月球真实倾角轨道和太阳方向；进入行星际尺度后显示太阳、地球绕日轨道及其他行星轨道。
 - 默认开启七颗重点小天体：谷神星、灶神星、爱神星、贝努、阿波菲斯、哈雷彗星和恩克彗星；位置和非共面轨道来自随项目发布的 NASA/JPL SBDB 根数快照。
+- 小天体公转位置在渲染帧之间连续插值；自转周期与可用极轴来自 JPL SBDB。缺少完整极轴的目标使用界面明确标识的示意轴。
+- NASA VTAD small-body shapes：选中谷神星、灶神星、爱神星或贝努时按需加载本地化的 NASA 真实形状模型；其他目标使用确定性程序岩石。来源：[Ceres](https://science.nasa.gov/resource/ceres-3d-model/)、[Vesta](https://science.nasa.gov/resource/vesta-3d-model/)、[Eros](https://science.nasa.gov/resource/eros-3d-model/)、[Bennu](https://science.nasa.gov/resource/bennu-3d-model/)。
 - 行星近景使用 NASA/JPL 公开纹理和 NASA 3D Resources 模型；远景尺寸会视觉放大，界面会明确提示。
 - 地球背景星空使用轻量 HYG 亮星表；本版本不包含 Gaia 恒星邻域功能。
 - `npm run validate:horizons` 会对 1900、2000、2100 的天体向量进行 NASA/JPL Horizons 回归比较，方向误差阈值为 1 角分。

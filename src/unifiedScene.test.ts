@@ -79,6 +79,18 @@ describe('unified earth and solar-system application boundary', () => {
     expect(smallBodies).toContain('rate={rate}')
   })
 
+  it('labels small-body rotation, axis accuracy, and shape provenance', () => {
+    const app = readFileSync(new URL('./App.tsx', import.meta.url), 'utf8')
+    const readme = readFileSync(new URL('../README.md', import.meta.url), 'utf8')
+    expect(app).toContain('自转周期')
+    expect(app).toContain('JPL 精确极轴')
+    expect(app).toContain('示意轴（非精确观测）')
+    expect(app).toContain('NASA VTAD 真实形状')
+    expect(app).toContain('确定性程序岩石')
+    expect(readme).toContain('NASA VTAD small-body shapes')
+    expect(readme).toContain('https://science.nasa.gov/resource/bennu-3d-model/')
+  })
+
   it('uses only observed clouds from NASA imagery', () => {
     const scene = readFileSync(new URL('./Scene.tsx', import.meta.url), 'utf8')
     expect(scene).not.toContain('DynamicCloudLayer')
