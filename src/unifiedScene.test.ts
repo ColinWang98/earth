@@ -230,6 +230,7 @@ describe('unified earth and solar-system application boundary', () => {
     expect(app).toContain('className="mobile-toolbar"')
     expect(app).toContain('className="mobile-details-close"')
     expect(app).toContain('cyclePreset')
+    expect(app).toContain("matchMedia('(max-width: 960px), (pointer: coarse)')")
     expect(app).toContain("object-details ${mobileDetailsOpen ? 'mobile-open' : ''}")
     expect(styles).toContain('.object-details.mobile-open')
     expect(styles).toContain('grid-template-columns: 40px 1fr 1fr')

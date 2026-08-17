@@ -52,7 +52,7 @@ export function App() {
   const [observation, setObservation] = useState<EarthObservationStatus>({ source: 'NASA GIBS · VIIRS/Suomi NPP · 预存', label: '2026-08-15 预存 NASA VIIRS 真彩 · 4K', date: '2026-08-15', fallback: true, loading: false, resolution: '4K' })
   const [simulation, setSimulation] = useState<SimulationState>(() => ({ utcMs: Date.now(), paused: false, rate: 1, selectedObjectId: 'earth' }))
   const [navigation, setNavigation] = useState<NavigationState>(() => nearEarthNavigation(Date.now()))
-  const [quality] = useState(() => /OculusBrowser|Android|iPhone|iPad/i.test(navigator.userAgent) ? 'mobile' as const : 'desktop' as const)
+  const [quality] = useState(() => (/OculusBrowser|Android|iPhone|iPad/i.test(navigator.userAgent) || window.matchMedia('(max-width: 960px), (pointer: coarse)').matches) ? 'mobile' as const : 'desktop' as const)
   const [dprCap, setDprCap] = useState(() => quality === 'mobile' ? 1.15 : 1.65)
   const handleSkyReady = useCallback(() => setSkyReady(true), [])
 
