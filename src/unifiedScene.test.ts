@@ -59,7 +59,24 @@ describe('unified earth and solar-system application boundary', () => {
     expect(orbitEarth).toContain('<SmallBodies')
     expect(orbitEarth).toContain("band=\"solar\"")
     const smallBodies = scene.slice(scene.indexOf('function SmallBodies'), scene.indexOf('function FlightWorld'))
-    expect(smallBodies).toContain('forceLabel sunDirection')
+    expect(smallBodies).toContain('<SmallBodyObject')
+  })
+
+  it('animates small bodies through a dedicated irregular-shape render path', () => {
+    const app = readFileSync(new URL('./App.tsx', import.meta.url), 'utf8')
+    const scene = readFileSync(new URL('./Scene.tsx', import.meta.url), 'utf8')
+    const smallBodies = scene.slice(scene.indexOf('function SmallBodies'), scene.indexOf('function FlightWorld'))
+    expect(app).toContain('paused={simulation.paused}')
+    expect(app).toContain('rate={simulation.rate}')
+    expect(scene).toContain('function SmallBodyVisual')
+    expect(scene).toContain('function ProceduralRock')
+    expect(scene).toContain('SMALL_BODY_MODELS')
+    expect(scene).toContain('frameSimulationUtcMs')
+    expect(scene).toContain('writeSmallBodyRenderPosition')
+    expect(scene).toContain('new THREE.IcosahedronGeometry')
+    expect(smallBodies).not.toContain('<FloatingBody')
+    expect(smallBodies).toContain('paused={paused}')
+    expect(smallBodies).toContain('rate={rate}')
   })
 
   it('uses only observed clouds from NASA imagery', () => {

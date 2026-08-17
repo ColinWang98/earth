@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { Suspense, useEffect, useMemo, useRef, useState } from 'react'
 import { OrbitControls, Text, useGLTF } from '@react-three/drei'
 import { useFrame, useThree } from '@react-three/fiber'
 import { IfInSessionMode, XRSpace } from '@react-three/xr'
@@ -7,8 +7,9 @@ import * as THREE from 'three'
 import { getEarthFixedSunDirection, getMoonOrbitPath, getPlanetOrbitPath, getSolarSystemSnapshot, type CelestialBodyId, type CelestialBodyState } from './astro'
 import { buildGibsWmsUrl, chooseEarthImagery, disposeReplacedTextures, estimateImageCoverage, getEarthResolutionFallbacks, getImageryBlendFrames, selectEarthResolution, type EarthImageryRequest, type EarthResolution } from './earthImagery'
 import { adaptiveFlightSpeed, compressedRenderDistance, nearestBody, selectSpaceBand, type AuVector, type NavigationState, type SpaceBand } from './navigation'
-import { getKeplerOrbitPath, propagateKeplerOrbit, type KeplerOrbit } from './orbits'
-import { SMALL_BODIES, type SmallBodyRecord } from './smallBodies'
+import { getKeplerOrbitPath, type KeplerOrbit } from './orbits'
+import { frameSimulationUtcMs, poleDirectionThree, spinAngleRad, writeSmallBodyRenderPosition } from './smallBodyMotion'
+import { SMALL_BODIES, type SmallBodyRecord, type SmallBodyShapeModel } from './smallBodies'
 
 export const CAMERA_PRESETS = [
   { id: 'orbit', label: '默认轨道', position: [0, 1.25, 9], duration: 1.5 },
@@ -40,6 +41,8 @@ type Props = {
   imageryRequest?: EarthImageryRequest
   showSmallBodies: boolean
   frameP95Ms: number | null
+  paused: boolean
+  rate: number
   utcMs: number
   onNavigationChange: (state: NavigationState) => void
   onObservationStatus: (status: EarthObservationStatus) => void
@@ -57,8 +60,13 @@ const OCEAN_MASK = `${import.meta.env.BASE_URL}assets/earth-specular.jpg`
 const MOON_MAP = `${import.meta.env.BASE_URL}assets/moon.jpg`
 const SUN_MAP = `${import.meta.env.BASE_URL}assets/sun-real.jpg`
 const STAR_CATALOG = `${import.meta.env.BASE_URL}assets/stars/hyg-bright-stars.bin`
-const SMALL_BODY_SUN_DIRECTION = new THREE.Vector3(1, 0, 0)
 const DEFAULT_ATMOSPHERE_SUN_DIRECTION = new THREE.Vector3(1, 0.2, 0.4).normalize()
+const SMALL_BODY_MODELS: Record<SmallBodyShapeModel, string> = {
+  ceres: `${import.meta.env.BASE_URL}assets/small-bodies/ceres.glb`,
+  vesta: `${import.meta.env.BASE_URL}assets/small-bodies/vesta.glb`,
+  eros: `${import.meta.env.BASE_URL}assets/small-bodies/eros.glb`,
+  bennu: `${import.meta.env.BASE_URL}assets/small-bodies/bennu.glb`,
+}
 
 const PLANET_VISUALS: Record<string, { color: string; texture?: string; tilt: number; periodDays: number; flattening?: number; atmosphere?: string; rings?: 'saturn' | 'uranus'; model?: string }> = {
   mercury: { color: '#a7a39d', tilt: 0.034, periodDays: 58.646, model: `${import.meta.env.BASE_URL}assets/planets/mercury.glb` },
@@ -403,7 +411,7 @@ function CameraDirector({ preset, controls, motion }: { preset: CameraPresetId; 
   return null
 }
 
-function OrbitEarth({ annotations, dayMap, preset, quality, selectedObjectId, showSmallBodies, sunDirection, utcMs, onSelect }: { annotations: boolean; dayMap: EarthObservationTextures; preset: CameraPresetId; quality: Quality; selectedObjectId?: string; showSmallBodies: boolean; sunDirection: THREE.Vector3; utcMs: number; onSelect: (id: string) => void }) {
+function OrbitEarth({ annotations, dayMap, paused, preset, quality, rate, selectedObjectId, showSmallBodies, sunDirection, utcMs, onSelect }: { annotations: boolean; dayMap: EarthObservationTextures; paused: boolean; preset: CameraPresetId; quality: Quality; rate: number; selectedObjectId?: string; showSmallBodies: boolean; sunDirection: THREE.Vector3; utcMs: number; onSelect: (id: string) => void }) {
   const controls = useRef<OrbitControlsImpl | null>(null)
   const motion = useRef<Motion>({ active: false, target: new THREE.Vector3(...CAMERA_PRESETS[0].position), duration: 1.5 })
   const [solarContextVisible, setSolarContextVisible] = useState(false)
@@ -439,7 +447,7 @@ function OrbitEarth({ annotations, dayMap, preset, quality, selectedObjectId, sh
     <mesh position={moonPosition}><sphereGeometry args={[0.58, quality === 'desktop' ? 64 : 36, quality === 'desktop' ? 64 : 36]} /><meshStandardMaterial map={moonMap} roughness={1} /></mesh>
     <group position={sunMarkerPosition} scale={1.25}><SunVisual detailed={false} quality={quality} /></group>
     {annotations && <><Text position={[0, 2.75, 0]} fontSize={0.18} color="#d9efff">NASA 近实时真彩地球</Text><Text position={[moonPosition.x, moonPosition.y + 0.9, moonPosition.z]} fontSize={0.16} color="#d9efff">月球 · 真实轨道方向</Text><Text position={[sunMarkerPosition.x, sunMarkerPosition.y + 1.8, sunMarkerPosition.z]} fontSize={0.18} color="#ffdca0">太阳方向示意</Text></>}
-    {showSmallBodies && solarContextVisible ? <SmallBodies dayMap={dayMap} observer={solarObserver} band="solar" quality={quality} selectedObjectId={selectedObjectId} utcMs={utcMs} onSelect={onSelect} /> : null}
+    {showSmallBodies && solarContextVisible ? <SmallBodies band="solar" observer={solarObserver} paused={paused} quality={quality} rate={rate} selectedObjectId={selectedObjectId} utcMs={utcMs} onSelect={onSelect} /> : null}
     <CameraDirector preset={preset} controls={controls} motion={motion} />
     <IfInSessionMode deny="immersive-vr">
       <OrbitControls ref={controls} enableDamping dampingFactor={0.06} minDistance={2.72} maxDistance={60} target={[0, 0, 0]} onStart={() => { motion.current.active = false }} />
@@ -635,18 +643,78 @@ function FloatingSmallOrbit({ orbit, observer, quality }: { orbit: KeplerOrbit; 
   return <lineLoop geometry={geometry}><lineBasicMaterial color="#9a5c32" transparent opacity={0.28} /></lineLoop>
 }
 
-function SmallBodies({ dayMap, observer, band, quality, selectedObjectId, utcMs, onSelect }: { dayMap: EarthObservationTextures; observer: React.MutableRefObject<AuVector>; band: SpaceBand; quality: Quality; selectedObjectId?: string; utcMs: number; onSelect: (id: string) => void }) {
-  const julianDay = utcMs / 86_400_000 + 2_440_587.5
-  if (band !== 'solar') return null
-  return <>{(SMALL_BODIES as SmallBodyRecord[]).map((body) => {
-    const position = propagateKeplerOrbit(body, julianDay)
-    const state = { id: body.id, label: body.label, englishLabel: body.englishLabel, color: '#d77c43', radiusKm: 20, positionAu: position } as CelestialBodyState
-    const selected = body.id === selectedObjectId
-    return <group key={body.id}><FloatingSmallOrbit orbit={body} observer={observer} quality={quality} /><FloatingBody body={state} dayMap={dayMap} observer={observer} band={band} nearestId="" quality="mobile" selected={selected} forceLabel sunDirection={SMALL_BODY_SUN_DIRECTION} utcMs={utcMs} onSelect={onSelect} /></group>
-  })}</>
+function smallBodySeed(id: string) {
+  let value = 2166136261
+  for (let index = 0; index < id.length; index += 1) value = Math.imul(value ^ id.charCodeAt(index), 16777619)
+  return value >>> 0
 }
 
-function FlightWorld({ dayMap, navigation, quality, selectedObjectId, showSmallBodies, sunDirection, utcMs, onNavigationChange, onSelect }: { dayMap: EarthObservationTextures; navigation: NavigationState; quality: Quality; selectedObjectId?: string; showSmallBodies: boolean; sunDirection: THREE.Vector3; utcMs: number; onNavigationChange: (state: NavigationState) => void; onSelect: (id: string) => void }) {
+function ProceduralRock({ body, quality }: { body: SmallBodyRecord; quality: Quality }) {
+  const geometry = useMemo(() => {
+    const next = new THREE.IcosahedronGeometry(1, quality === 'desktop' ? 2 : 1).toNonIndexed()
+    const positions = next.getAttribute('position') as THREE.BufferAttribute
+    const seed = smallBodySeed(body.id)
+    for (let index = 0; index < positions.count; index += 1) {
+      const x = positions.getX(index), y = positions.getY(index), z = positions.getZ(index)
+      const length = Math.hypot(x, y, z) || 1
+      const nx = x / length, ny = y / length, nz = z / length
+      const largeScale = Math.sin(nx * 5.7 + seed * 0.000013) * Math.sin(ny * 7.1 - seed * 0.000017)
+      const smallScale = Math.sin((nx + ny + nz) * 19.0 + seed * 0.000031)
+      const roughness = 0.9 + largeScale * 0.115 + smallScale * 0.045
+      positions.setXYZ(index, nx * roughness * body.axisRatios[0], ny * roughness * body.axisRatios[1], nz * roughness * body.axisRatios[2])
+    }
+    next.computeVertexNormals()
+    return next
+  }, [body, quality])
+  useEffect(() => () => geometry.dispose(), [geometry])
+  return <mesh geometry={geometry}><meshStandardMaterial color={body.shapeModel ? '#8a8174' : '#6f6255'} roughness={0.96} metalness={0.02} flatShading /></mesh>
+}
+
+function SmallBodyVisual({ body, quality, selected }: { body: SmallBodyRecord; quality: Quality; selected: boolean }) {
+  const fallback = <ProceduralRock body={body} quality={quality} />
+  if (!selected || !body.shapeModel) return fallback
+  return <Suspense fallback={fallback}><NasaModel url={SMALL_BODY_MODELS[body.shapeModel]} /></Suspense>
+}
+
+function SmallBodyObject({ body, observer, paused, quality, rate, selected, utcMs, onSelect }: { body: SmallBodyRecord; observer: React.MutableRefObject<AuVector>; paused: boolean; quality: Quality; rate: number; selected: boolean; utcMs: number; onSelect: (id: string) => void }) {
+  const group = useRef<THREE.Group>(null)
+  const visual = useRef<THREE.Group>(null)
+  const spinner = useRef<THREE.Group>(null)
+  const anchor = useRef({ utcMs, realMs: performance.now(), paused, rate })
+  if (anchor.current.utcMs !== utcMs || anchor.current.paused !== paused || anchor.current.rate !== rate) anchor.current = { utcMs, realMs: performance.now(), paused, rate }
+  const poleQuaternion = useMemo(() => {
+    const direction = new THREE.Vector3(...poleDirectionThree(body.poleRaDeg, body.poleDecDeg))
+    return new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), direction)
+  }, [body.poleDecDeg, body.poleRaDeg])
+  const markerRadius = selected ? 0.34 : 0.17
+
+  useFrame(() => {
+    if (!group.current || !visual.current || !spinner.current) return
+    const frameUtcMs = frameSimulationUtcMs(anchor.current.utcMs, anchor.current.realMs, performance.now(), anchor.current.rate, anchor.current.paused)
+    writeSmallBodyRenderPosition(body, observer.current, frameUtcMs, group.current.position)
+    spinner.current.rotation.y = spinAngleRad(frameUtcMs, body.rotationPeriodHours)
+    visual.current.scale.setScalar(markerRadius)
+  })
+
+  return <group ref={group} onClick={(event) => { event.stopPropagation(); onSelect(body.id) }}>
+    <group ref={visual}>
+      <group quaternion={poleQuaternion}><group ref={spinner}><SmallBodyVisual body={body} quality={quality} selected={selected} /></group></group>
+      {selected && <mesh rotation={[Math.PI / 2, 0, 0]}><ringGeometry args={[1.28, 1.48, 40]} /><meshBasicMaterial color="#ffd2a0" transparent opacity={0.9} side={THREE.DoubleSide} /></mesh>}
+    </group>
+    <mesh><sphereGeometry args={[0.38, 12, 8]} /><meshBasicMaterial transparent opacity={0} depthWrite={false} /></mesh>
+    <Text position={[markerRadius + 0.32, markerRadius * 0.25, 0]} fontSize={0.22} color={selected ? '#ffffff' : '#d9a36c'} anchorX="left">{body.label}</Text>
+  </group>
+}
+
+function SmallBodies({ band, observer, paused, quality, rate, selectedObjectId, utcMs, onSelect }: { band: SpaceBand; observer: React.MutableRefObject<AuVector>; paused: boolean; quality: Quality; rate: number; selectedObjectId?: string; utcMs: number; onSelect: (id: string) => void }) {
+  if (band !== 'solar') return null
+  return <>{(SMALL_BODIES as SmallBodyRecord[]).map((body) => <group key={body.id}>
+    <FloatingSmallOrbit orbit={body} observer={observer} quality={quality} />
+    <SmallBodyObject body={body} observer={observer} paused={paused} quality={quality} rate={rate} selected={body.id === selectedObjectId} utcMs={utcMs} onSelect={onSelect} />
+  </group>)}</>
+}
+
+function FlightWorld({ dayMap, navigation, paused, quality, rate, selectedObjectId, showSmallBodies, sunDirection, utcMs, onNavigationChange, onSelect }: { dayMap: EarthObservationTextures; navigation: NavigationState; paused: boolean; quality: Quality; rate: number; selectedObjectId?: string; showSmallBodies: boolean; sunDirection: THREE.Vector3; utcMs: number; onNavigationChange: (state: NavigationState) => void; onSelect: (id: string) => void }) {
   const snapshot = useMemo(() => getSolarSystemSnapshot(utcMs), [utcMs])
   const observer = useRef<AuVector>([...navigation.observerHelioAu])
   const band = useRef<SpaceBand>(navigation.band)
@@ -745,7 +813,7 @@ function FlightWorld({ dayMap, navigation, quality, selectedObjectId, showSmallB
   return <>
     {navigation.band !== 'surface' && ORBIT_IDS.map((id) => <FloatingOrbit key={id} id={id} observer={observer} band={navigation.band} quality={quality} utcMs={utcMs} />)}
     {snapshot.map((body) => <FloatingBody key={body.id} body={body} dayMap={dayMap} observer={observer} band={navigation.band} nearestId={closest.id} quality={quality} selected={body.id === selectedObjectId} sunDirection={sunDirection} utcMs={utcMs} onSelect={onSelect} />)}
-    {showSmallBodies && <SmallBodies dayMap={dayMap} observer={observer} band={navigation.band} quality={quality} selectedObjectId={selectedObjectId} utcMs={utcMs} onSelect={onSelect} />}
+    {showSmallBodies && <SmallBodies band={navigation.band} observer={observer} paused={paused} quality={quality} rate={rate} selectedObjectId={selectedObjectId} utcMs={utcMs} onSelect={onSelect} />}
   </>
 }
 
@@ -756,7 +824,7 @@ export function VRPresetMenu({ onPresetChange }: { onPresetChange: (preset: Came
   </group>)}</group></XRSpace></IfInSessionMode>
 }
 
-export function Scene({ annotations, navigation, preset, quality, selectedObjectId, imageryRequest, showSmallBodies, frameP95Ms, utcMs, onNavigationChange, onObservationStatus, onSelect, onSkyReady }: Props) {
+export function Scene({ annotations, navigation, paused, preset, quality, rate, selectedObjectId, imageryRequest, showSmallBodies, frameP95Ms, utcMs, onNavigationChange, onObservationStatus, onSelect, onSkyReady }: Props) {
   const closeView = navigation.controlMode === 'flight' ? navigation.band === 'surface' : preset === 'atmosphere' || preset === 'clouds' || preset === 'china'
   const dayMap = useEarthObservationTexture(imageryRequest, quality, closeView, frameP95Ms, onObservationStatus)
   const sunDirection = useMemo(() => new THREE.Vector3(...getEarthFixedSunDirection(utcMs)), [utcMs])
@@ -768,7 +836,7 @@ export function Scene({ annotations, navigation, preset, quality, selectedObject
     <directionalLight position={sunDirection.clone().multiplyScalar(80)} intensity={3.2} color="#fff7df" />
     <StarCatalog onReady={onSkyReady} quality={quality} />
     {navigation.controlMode === 'orbit'
-      ? <OrbitEarth annotations={annotations} dayMap={dayMap} preset={preset} quality={quality} selectedObjectId={selectedObjectId} showSmallBodies={showSmallBodies} sunDirection={sunDirection} utcMs={utcMs} onSelect={onSelect} />
-      : <FlightWorld dayMap={dayMap} navigation={navigation} quality={quality} selectedObjectId={selectedObjectId} showSmallBodies={showSmallBodies} sunDirection={sunDirection} utcMs={utcMs} onNavigationChange={onNavigationChange} onSelect={onSelect} />}
+      ? <OrbitEarth annotations={annotations} dayMap={dayMap} paused={paused} preset={preset} quality={quality} rate={rate} selectedObjectId={selectedObjectId} showSmallBodies={showSmallBodies} sunDirection={sunDirection} utcMs={utcMs} onSelect={onSelect} />
+      : <FlightWorld dayMap={dayMap} navigation={navigation} paused={paused} quality={quality} rate={rate} selectedObjectId={selectedObjectId} showSmallBodies={showSmallBodies} sunDirection={sunDirection} utcMs={utcMs} onNavigationChange={onNavigationChange} onSelect={onSelect} />}
   </>
 }

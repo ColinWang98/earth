@@ -117,6 +117,8 @@ export function App() {
             imageryRequest={imageryRequest}
             showSmallBodies={showSmallBodies}
             frameP95Ms={frameP95}
+            paused={simulation.paused}
+            rate={simulation.rate}
             utcMs={simulation.utcMs}
             onNavigationChange={setNavigation}
             onObservationStatus={setObservation}
