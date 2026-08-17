@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs'
+import { existsSync, readFileSync, statSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 
 describe('unified earth and solar-system application boundary', () => {
@@ -50,6 +50,30 @@ describe('unified earth and solar-system application boundary', () => {
     expect(imageryHook).toContain('const resolutionRef = useRef(resolution)')
     expect(imageryHook).toContain('const requestedResolution = resolutionRef.current')
     expect(imageryHook).not.toContain('resolution.height, resolution.label, resolution.width')
+  })
+
+  it('ships and selects smaller bundled Earth textures for mobile devices', () => {
+    const html = readFileSync(new URL('../index.html', import.meta.url), 'utf8')
+    const scene = readFileSync(new URL('./Scene.tsx', import.meta.url), 'utf8')
+    const mobileAssets = [
+      '../public/assets/earth-nasa-viirs-2026-08-15-2k.jpg',
+      '../public/assets/earth-blue-marble-2k.jpg',
+      '../public/assets/earth-night-2k.jpg',
+      '../public/assets/earth-specular-1k.jpg',
+    ]
+    for (const asset of mobileAssets) {
+      const url = new URL(asset, import.meta.url)
+      expect(existsSync(url)).toBe(true)
+      expect(statSync(url).size).toBeLessThan(1_200_000)
+    }
+    expect(html).toContain('earth-nasa-viirs-2026-08-15-2k.jpg')
+    expect(html).toContain('(pointer: coarse)')
+    expect(html).toContain('(pointer: fine)')
+    expect(scene).toContain('MOBILE_NASA_SNAPSHOT_MAP')
+    expect(scene).toContain("quality === 'mobile' ? MOBILE_NASA_SNAPSHOT_MAP : NASA_SNAPSHOT_MAP")
+    expect(scene).toContain("quality === 'mobile' ? MOBILE_DAY_MAP : DAY_MAP")
+    expect(scene).toContain("quality === 'mobile' ? MOBILE_NIGHT_MAP : NIGHT_MAP")
+    expect(scene).toContain("quality === 'mobile' ? MOBILE_OCEAN_MASK : OCEAN_MASK")
   })
 
   it('renders enabled small bodies in orbit mode as well as flight mode', () => {

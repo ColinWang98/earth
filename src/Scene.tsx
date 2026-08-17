@@ -55,10 +55,14 @@ type Props = {
 const AU_KM = 149_597_870.7
 const J2000_MS = Date.UTC(2000, 0, 1, 12)
 const DAY_MAP = `${import.meta.env.BASE_URL}assets/earth-blue-marble-5k.jpg`
+const MOBILE_DAY_MAP = `${import.meta.env.BASE_URL}assets/earth-blue-marble-2k.jpg`
 const NASA_SNAPSHOT_MAP = `${import.meta.env.BASE_URL}assets/earth-nasa-viirs-2026-08-15-4k.jpg`
+const MOBILE_NASA_SNAPSHOT_MAP = `${import.meta.env.BASE_URL}assets/earth-nasa-viirs-2026-08-15-2k.jpg`
 const NASA_SNAPSHOT_DATE = '2026-08-15'
 const NIGHT_MAP = `${import.meta.env.BASE_URL}assets/earth-night.png`
+const MOBILE_NIGHT_MAP = `${import.meta.env.BASE_URL}assets/earth-night-2k.jpg`
 const OCEAN_MASK = `${import.meta.env.BASE_URL}assets/earth-specular.jpg`
+const MOBILE_OCEAN_MASK = `${import.meta.env.BASE_URL}assets/earth-specular-1k.jpg`
 const MOON_MAP = `${import.meta.env.BASE_URL}assets/moon.jpg`
 const SUN_MAP = `${import.meta.env.BASE_URL}assets/sun-real.jpg`
 const STAR_CATALOG = `${import.meta.env.BASE_URL}assets/stars/hyg-bright-stars.bin`
@@ -133,8 +137,8 @@ function makeObservationTexture(image: HTMLImageElement, quality: Quality, gener
 }
 
 function useEarthObservationTexture(imageryRequest: EarthImageryRequest | undefined, quality: Quality, closeView: boolean, frameP95Ms: number | null, onStatus: (status: EarthObservationStatus) => void) {
-  const fallback = useTexture(DAY_MAP, quality)
-  const snapshot = useTexture(NASA_SNAPSHOT_MAP, quality)
+  const fallback = useTexture(quality === 'mobile' ? MOBILE_DAY_MAP : DAY_MAP, quality)
+  const snapshot = useTexture(quality === 'mobile' ? MOBILE_NASA_SNAPSHOT_MAP : NASA_SNAPSHOT_MAP, quality)
   const { gl } = useThree()
   const resolution = selectEarthResolution({ quality, closeView, maxTextureSize: gl.capabilities.maxTextureSize, deviceMemoryGb: (navigator as Navigator & { deviceMemory?: number }).deviceMemory, frameP95Ms })
   const resolutionRef = useRef(resolution)
@@ -154,7 +158,8 @@ function useEarthObservationTexture(imageryRequest: EarthImageryRequest | undefi
       const previous = owned.current
       owned.current = []
       setTextures({ base: fallback, primary: snapshot, secondary: snapshot, mix: 0, resolution: requestedResolution })
-      onStatus({ source: 'NASA GIBS · VIIRS/Suomi NPP · 预存', label: `${label} · 4K`, date: NASA_SNAPSHOT_DATE, fallback: true, loading: false, resolution: '4K' })
+      const bundledResolution = quality === 'mobile' ? '2K' : '4K'
+      onStatus({ source: 'NASA GIBS · VIIRS/Suomi NPP · 预存', label: `${label} · ${bundledResolution}`, date: NASA_SNAPSHOT_DATE, fallback: true, loading: false, resolution: bundledResolution })
       if (previous.length) retireTimer = window.setTimeout(() => disposeReplacedTextures(previous), 1_500)
     }
     const load = async () => {
@@ -356,8 +361,8 @@ function EarthSurface({ baseMap, dayMaps, dayMix, nightMap, oceanMask, radius, s
 }
 
 function EarthGlobe({ baseMap, dayMaps, dayMix, paused, quality, radius, rate, sunDirection, utcMs }: { baseMap: THREE.Texture; dayMaps: [THREE.Texture, THREE.Texture]; dayMix: number; paused: boolean; quality: Quality; radius: number; rate: number; sunDirection: THREE.Vector3; utcMs: number }) {
-  const night = useTexture(NIGHT_MAP, quality)
-  const ocean = useTexture(OCEAN_MASK, quality, THREE.NoColorSpace)
+  const night = useTexture(quality === 'mobile' ? MOBILE_NIGHT_MAP : NIGHT_MAP, quality)
+  const ocean = useTexture(quality === 'mobile' ? MOBILE_OCEAN_MASK : OCEAN_MASK, quality, THREE.NoColorSpace)
   const segments = quality === 'desktop' ? 128 : 72
   const spin = useRef<THREE.Group>(null)
   const anchor = useRef({ utcMs, realMs: performance.now(), rate, paused })
