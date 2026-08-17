@@ -1,6 +1,6 @@
 {
   "source": "NASA/JPL SBDB",
-  "generatedAt": "2026-08-16T06:57:21.343Z",
+  "generatedAt": "2026-08-17T06:51:59.938Z",
   "bodies": [
     {
       "id": "20000001",
@@ -12,7 +12,18 @@
       "inclinationDeg": 10.6,
       "ascendingNodeDeg": 80.2,
       "argumentOfPerihelionDeg": 73.3,
-      "meanAnomalyDeg": 274
+      "meanAnomalyDeg": 274,
+      "rotationPeriodHours": 9.07417,
+      "rotationSource": "jpl",
+      "poleRaDeg": 291.421,
+      "poleDecDeg": 66.758,
+      "axisSource": "jpl",
+      "axisRatios": [
+        1,
+        0.9997926171712983,
+        0.9247200331812526
+      ],
+      "shapeModel": "ceres"
     },
     {
       "id": "20000004",
@@ -24,7 +35,18 @@
       "inclinationDeg": 7.14,
       "ascendingNodeDeg": 104,
       "argumentOfPerihelionDeg": 151,
-      "meanAnomalyDeg": 81.2
+      "meanAnomalyDeg": 81.2,
+      "rotationPeriodHours": 5.3421276322,
+      "rotationSource": "jpl",
+      "poleRaDeg": 309.0611,
+      "poleDecDeg": 42.232386,
+      "axisSource": "jpl",
+      "axisRatios": [
+        1,
+        0.9740706907455555,
+        0.7952006183683508
+      ],
+      "shapeModel": "vesta"
     },
     {
       "id": "20000433",
@@ -36,7 +58,18 @@
       "inclinationDeg": 10.8,
       "ascendingNodeDeg": 304,
       "argumentOfPerihelionDeg": 179,
-      "meanAnomalyDeg": 62.5
+      "meanAnomalyDeg": 62.5,
+      "rotationPeriodHours": 5.27,
+      "rotationSource": "jpl",
+      "poleRaDeg": 11.37,
+      "poleDecDeg": 17.22,
+      "axisSource": "jpl",
+      "axisRatios": [
+        1,
+        0.3255813953488372,
+        0.3255813953488372
+      ],
+      "shapeModel": "eros"
     },
     {
       "id": "20101955",
@@ -48,7 +81,18 @@
       "inclinationDeg": 6.03,
       "ascendingNodeDeg": 2.06,
       "argumentOfPerihelionDeg": 66.2,
-      "meanAnomalyDeg": 102
+      "meanAnomalyDeg": 102,
+      "rotationPeriodHours": 4.296061,
+      "rotationSource": "jpl",
+      "poleRaDeg": 85.4522,
+      "poleDecDeg": -60.3678,
+      "axisSource": "jpl",
+      "axisRatios": [
+        1,
+        0.9744402615415098,
+        0.9048939964335247
+      ],
+      "shapeModel": "bennu"
     },
     {
       "id": "20099942",
@@ -60,7 +104,17 @@
       "inclinationDeg": 3.34,
       "ascendingNodeDeg": 204,
       "argumentOfPerihelionDeg": 127,
-      "meanAnomalyDeg": 175
+      "meanAnomalyDeg": 175,
+      "rotationPeriodHours": 30.56,
+      "rotationSource": "jpl",
+      "poleRaDeg": 250,
+      "poleDecDeg": -50,
+      "axisSource": "illustrative",
+      "axisRatios": [
+        1,
+        0.72,
+        0.58
+      ]
     },
     {
       "id": "1000036",
@@ -72,7 +126,17 @@
       "inclinationDeg": 162,
       "ascendingNodeDeg": 59.1,
       "argumentOfPerihelionDeg": 112,
-      "meanAnomalyDeg": 274
+      "meanAnomalyDeg": 274,
+      "rotationPeriodHours": 52.8,
+      "rotationSource": "illustrative",
+      "poleRaDeg": 210,
+      "poleDecDeg": -20,
+      "axisSource": "illustrative",
+      "axisRatios": [
+        1,
+        0.5503355704697986,
+        0.5503355704697986
+      ]
     },
     {
       "id": "1000025",
@@ -84,7 +148,17 @@
       "inclinationDeg": 11.4,
       "ascendingNodeDeg": 334,
       "argumentOfPerihelionDeg": 187,
-      "meanAnomalyDeg": 246
+      "meanAnomalyDeg": 246,
+      "rotationPeriodHours": 11.083,
+      "rotationSource": "jpl",
+      "poleRaDeg": 160,
+      "poleDecDeg": 40,
+      "axisSource": "illustrative",
+      "axisRatios": [
+        1,
+        0.62,
+        0.48
+      ]
     }
   ]
 }

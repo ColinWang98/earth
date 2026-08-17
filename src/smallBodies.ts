@@ -1,7 +1,19 @@
 import catalogue from './data/small-bodies.json'
 import { propagateKeplerOrbit, type KeplerOrbit } from './orbits'
 
-export type SmallBodyRecord = KeplerOrbit & { id: string; label: string; englishLabel: string }
+export type SmallBodyShapeModel = 'ceres' | 'vesta' | 'eros' | 'bennu'
+export type SmallBodyRecord = KeplerOrbit & {
+  id: string
+  label: string
+  englishLabel: string
+  rotationPeriodHours: number
+  rotationSource: 'jpl' | 'illustrative'
+  poleRaDeg: number
+  poleDecDeg: number
+  axisSource: 'jpl' | 'illustrative'
+  axisRatios: [number, number, number]
+  shapeModel?: SmallBodyShapeModel
+}
 export type SmallBodyState = SmallBodyRecord & { color: string; radiusKm: number; positionAu: [number, number, number] }
 
 export const SMALL_BODIES = catalogue.bodies as SmallBodyRecord[]
