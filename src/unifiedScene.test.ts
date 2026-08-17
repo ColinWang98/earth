@@ -222,4 +222,16 @@ describe('unified earth and solar-system application boundary', () => {
     expect(catalog).toContain('smoothstep')
     expect(catalog).not.toContain('<pointsMaterial')
   })
+
+  it('keeps essential scene controls usable without covering the mobile viewport', () => {
+    const app = readFileSync(new URL('./App.tsx', import.meta.url), 'utf8')
+    const styles = readFileSync(new URL('./styles.css', import.meta.url), 'utf8')
+    expect(app).toContain('mobileDetailsOpen')
+    expect(app).toContain('className="mobile-toolbar"')
+    expect(app).toContain('className="mobile-details-close"')
+    expect(app).toContain('cyclePreset')
+    expect(app).toContain("object-details ${mobileDetailsOpen ? 'mobile-open' : ''}")
+    expect(styles).toContain('.object-details.mobile-open')
+    expect(styles).toContain('grid-template-columns: 40px 1fr 1fr')
+  })
 })

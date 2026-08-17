@@ -7,6 +7,7 @@ canvas { touch-action: none; }
 .title-block p, .title-block span { margin: 0; color: #80b1d5; font-size: 10px; letter-spacing: .18em; text-transform: uppercase; }
 .title-block h1 { margin: 5px 0 4px; font-weight: 450; font-size: 25px; letter-spacing: .06em; }
 .control-panel { position: fixed; right: 24px; bottom: 28px; display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-end; max-width: 480px; }
+.mobile-toolbar, .mobile-details-close { display: none; }
 .preset-panel { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; width: 100%; }
 button { color: #eaf6ff; border: 1px solid #79b4dc66; border-radius: 999px; background: #0a1a2cbb; backdrop-filter: blur(10px); padding: 10px 15px; font: inherit; font-size: 13px; cursor: pointer; transition: background .2s, transform .2s; }
 button:hover { background: #163654ee; transform: translateY(-1px); }
@@ -33,4 +34,19 @@ footer { position: fixed; left: 30px; bottom: 26px; display: grid; max-width: 54
 .control-flight::after { position: fixed; inset: 0; border: 0 solid #000; pointer-events: none; transition: box-shadow .3s; }
 .control-flight.band-solar::after { content: ''; box-shadow: inset 0 0 130px 8px #0005; }
 @media (max-width: 960px) { .title-block { top: 18px; left: 20px; } .time-panel { top: 96px; right: 14px; } footer { max-width: 46vw; } }
-@media (max-width: 640px) { .title-block { top: 18px; left: 18px; } .title-block h1 { font-size: 20px; } .time-panel { top: auto; right: 12px; bottom: 12px; left: 12px; flex-wrap: wrap; } .time-panel input, .time-panel select { flex: 1; min-width: 110px; } .control-panel { display: none; } .object-details { top: auto; right: 12px; bottom: 112px; left: 12px; width: auto; transform: none; } .flight-help, footer { display: none; } button { padding: 9px 8px; font-size: 11px; } }
+@media (max-width: 640px) {
+  .title-block { top: 16px; left: 16px; }
+  .title-block h1 { font-size: 19px; }
+  .title-block span { display: none; }
+  .time-panel { top: auto; right: 10px; bottom: max(10px, env(safe-area-inset-bottom)); left: 10px; display: grid; grid-template-columns: 40px 1fr 1fr; gap: 6px; padding: 6px; }
+  .time-panel input, .time-panel select { width: 100%; min-width: 0; height: 34px; padding: 0 7px; font-size: 11px; }
+  .time-panel button { min-height: 34px; padding: 7px 6px; }
+  .control-panel { display: none; }
+  .mobile-toolbar { position: fixed; right: 10px; bottom: calc(98px + env(safe-area-inset-bottom)); left: 10px; display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
+  .mobile-toolbar button { overflow: hidden; padding: 9px 4px; white-space: nowrap; text-overflow: ellipsis; }
+  .object-details { display: none; top: auto; right: 10px; bottom: calc(142px + env(safe-area-inset-bottom)); left: 10px; width: auto; max-height: min(48svh, 420px); transform: none; overflow: auto; padding: 16px; }
+  .object-details.mobile-open { display: block; }
+  .object-details > .mobile-details-close { position: absolute; top: 9px; right: 9px; display: block; width: 30px; height: 30px; margin: 0; padding: 0; border-radius: 50%; }
+  .flight-help, footer { display: none; }
+  button { padding: 9px 8px; font-size: 11px; }
+}

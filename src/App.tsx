@@ -46,6 +46,7 @@ export function App() {
   const [skyReady, setSkyReady] = useState(false)
   const [preset, setPreset] = useState<CameraPresetId>('orbit')
   const [showSmallBodies, setShowSmallBodies] = useState(true)
+  const [mobileDetailsOpen, setMobileDetailsOpen] = useState(false)
   const [frameP95, setFrameP95] = useState<number | null>(null)
   const [imageryRequest, setImageryRequest] = useState<EarthImageryRequest>()
   const [observation, setObservation] = useState<EarthObservationStatus>({ source: 'NASA GIBS · VIIRS/Suomi NPP · 预存', label: '2026-08-15 预存 NASA VIIRS 真彩 · 4K', date: '2026-08-15', fallback: true, loading: false, resolution: '4K' })
@@ -94,6 +95,10 @@ export function App() {
   const selectBody = useCallback((id: string) => {
     setSimulation((current) => ({ ...current, selectedObjectId: id }))
   }, [])
+  const cyclePreset = () => setPreset((current) => {
+    const index = CAMERA_PRESETS.findIndex((item) => item.id === current)
+    return CAMERA_PRESETS[(index + 1) % CAMERA_PRESETS.length].id
+  })
 
   const flightAvailable = !('ontouchstart' in window) || /OculusBrowser/i.test(navigator.userAgent)
   const distanceLabel = nearest.distanceAu < 0.01 ? `${Math.round(nearest.distanceAu * AU_KM).toLocaleString()} km` : `${nearest.distanceAu.toFixed(3)} AU`
@@ -148,9 +153,16 @@ export function App() {
       <button onClick={() => xrStore.enterVR()}>进入 VR</button>
     </section>
 
+    <section className="mobile-toolbar" aria-label="手机场景控制">
+      <button onClick={cyclePreset}>{CAMERA_PRESETS.find((item) => item.id === preset)?.label ?? '切换机位'}</button>
+      <button className={annotations ? 'active' : ''} onClick={() => setAnnotations((current) => !current)}>标签</button>
+      <button className={showSmallBodies ? 'active' : ''} onClick={() => setShowSmallBodies((current) => !current)}>小天体</button>
+      <button className={mobileDetailsOpen ? 'active' : ''} aria-expanded={mobileDetailsOpen} onClick={() => setMobileDetailsOpen((current) => !current)}>详情</button>
+    </section>
+
     {navigation.controlMode === 'flight' && <section className="flight-help"><strong>自由飞行</strong><span>WASD 移动 · Q/E 升降 · Shift 加速 · 滚轮调速 · Esc 释放鼠标</span></section>}
 
-    {selectedBody && <aside className="object-details"><small>SELECTED OBJECT</small><h2>{selectedBody.label}</h2><p>{selectedBody.englishLabel}</p><dl><div><dt>观察距离</dt><dd>{selectedDistanceLabel}</dd></div><div><dt>{selectedIsSmallBody ? '显示方式' : '平均半径'}</dt><dd>{selectedIsSmallBody ? '视觉放大标记' : `${selectedBody.radiusKm.toLocaleString()} km`}</dd></div>{selectedSmallBody && <><div><dt>自转周期</dt><dd>{selectedSmallBody.rotationPeriodHours.toFixed(2)} h · {selectedSmallBody.rotationSource === 'jpl' ? 'JPL' : '近似值'}</dd></div><div><dt>自转轴</dt><dd>{selectedSmallBody.axisSource === 'jpl' ? 'JPL 精确极轴' : '示意轴（非精确观测）'}</dd></div><div><dt>形状数据</dt><dd>{selectedSmallBody.shapeModel ? 'NASA VTAD 真实形状' : '确定性程序岩石'}</dd></div></>}<div><dt>日心坐标 (AU)</dt><dd>{selectedCoordinates}</dd></div><div><dt>数据时刻</dt><dd>{dataTimestamp} UTC</dd></div><div><dt>位置数据</dt><dd>{selectedIsSmallBody ? 'NASA/JPL SBDB' : 'Astronomy Engine / JPL'}</dd></div></dl></aside>}
+    {selectedBody && <aside className={`object-details ${mobileDetailsOpen ? 'mobile-open' : ''}`}><button className="mobile-details-close" aria-label="关闭详情" onClick={() => setMobileDetailsOpen(false)}>×</button><small>SELECTED OBJECT</small><h2>{selectedBody.label}</h2><p>{selectedBody.englishLabel}</p><dl><div><dt>观察距离</dt><dd>{selectedDistanceLabel}</dd></div><div><dt>{selectedIsSmallBody ? '显示方式' : '平均半径'}</dt><dd>{selectedIsSmallBody ? '视觉放大标记' : `${selectedBody.radiusKm.toLocaleString()} km`}</dd></div>{selectedSmallBody && <><div><dt>自转周期</dt><dd>{selectedSmallBody.rotationPeriodHours.toFixed(2)} h · {selectedSmallBody.rotationSource === 'jpl' ? 'JPL' : '近似值'}</dd></div><div><dt>自转轴</dt><dd>{selectedSmallBody.axisSource === 'jpl' ? 'JPL 精确极轴' : '示意轴（非精确观测）'}</dd></div><div><dt>形状数据</dt><dd>{selectedSmallBody.shapeModel ? 'NASA VTAD 真实形状' : '确定性程序岩石'}</dd></div></>}<div><dt>日心坐标 (AU)</dt><dd>{selectedCoordinates}</dd></div><div><dt>数据时刻</dt><dd>{dataTimestamp} UTC</dd></div><div><dt>位置数据</dt><dd>{selectedIsSmallBody ? 'NASA/JPL SBDB' : 'Astronomy Engine / JPL'}</dd></div></dl></aside>}
 
     <footer>
       <span>{navigation.band === 'surface' ? '近地表尺度' : navigation.band === 'orbital' ? '行星轨道尺度' : '太阳系尺度 · 远景尺寸已放大'}</span>
