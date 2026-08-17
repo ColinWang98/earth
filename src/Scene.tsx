@@ -11,6 +11,7 @@ import { adaptiveFlightSpeed, compressedRenderDistance, nearestBody, selectSpace
 import { getKeplerOrbitPath, type KeplerOrbit } from './orbits'
 import { frameSimulationUtcMs, poleDirectionThree, spinAngleRad, writeSmallBodyRenderPosition } from './smallBodyMotion'
 import { SMALL_BODIES, type SmallBodyRecord, type SmallBodyShapeModel } from './smallBodies'
+import { starAppearance } from './starAppearance'
 
 export const CAMERA_PRESETS = [
   { id: 'orbit', label: '默认轨道', position: [0, 1.25, 9], duration: 1.5 },
@@ -399,23 +400,36 @@ function StarCatalog({ onReady, quality }: { onReady: () => void; quality: Quali
       const count = Math.min(source.length / 5, quality === 'desktop' ? 1250 : 850)
       const positions = new Float32Array(count * 3)
       const colors = new Float32Array(count * 3)
+      const sizes = new Float32Array(count)
+      const opacities = new Float32Array(count)
       const color = new THREE.Color()
       for (let index = 0; index < count; index += 1) {
         positions.set([source[index * 5] * 260, source[index * 5 + 1] * 260, source[index * 5 + 2] * 260], index * 3)
         const bv = source[index * 5 + 3]
         color.set(bv < 0.2 ? '#a9c5ff' : bv < 0.8 ? '#fff3db' : '#ffbd82')
         colors.set(color.toArray(), index * 3)
+        const appearance = starAppearance(source[index * 5 + 4], quality)
+        sizes[index] = appearance.sizePx
+        opacities[index] = appearance.opacity
       }
       next = new THREE.BufferGeometry()
       next.setAttribute('position', new THREE.BufferAttribute(positions, 3))
       next.setAttribute('color', new THREE.BufferAttribute(colors, 3))
+      next.setAttribute('starSize', new THREE.BufferAttribute(sizes, 1))
+      next.setAttribute('starOpacity', new THREE.BufferAttribute(opacities, 1))
       setGeometry(next)
       onReady()
     })
     return () => { disposed = true; next?.dispose() }
   }, [onReady, quality])
   if (!geometry) return null
-  return <points geometry={geometry} frustumCulled={false}><pointsMaterial size={quality === 'desktop' ? 0.95 : 0.78} sizeAttenuation={false} vertexColors transparent opacity={0.56} depthWrite={false} /></points>
+  return <points geometry={geometry} frustumCulled={false}><shaderMaterial transparent depthWrite={false} depthTest vertexColors blending={THREE.AdditiveBlending} vertexShader={`
+    attribute float starSize; attribute float starOpacity; varying vec3 vColor; varying float vOpacity;
+    void main(){vColor=color;vOpacity=starOpacity;gl_PointSize=starSize;gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0);}
+  `} fragmentShader={`
+    varying vec3 vColor; varying float vOpacity;
+    void main(){float radius=length(gl_PointCoord-vec2(0.5));float disc=1.0-smoothstep(0.28,0.5,radius);if(disc<=0.0)discard;gl_FragColor=vec4(vColor,vOpacity*disc);}
+  `} /></points>
 }
 
 function CameraDirector({ preset, controls, motion }: { preset: CameraPresetId; controls: React.RefObject<OrbitControlsImpl | null>; motion: React.MutableRefObject<Motion> }) {

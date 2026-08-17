@@ -187,4 +187,15 @@ describe('unified earth and solar-system application boundary', () => {
     expect(scene).toContain('<sphereGeometry args={[320, 32, 16]} />')
     expect(scene).toContain('<meshBasicMaterial color="#010207" side={THREE.BackSide}')
   })
+
+  it('renders visible magnitude-aware circular HYG stars', () => {
+    const scene = readFileSync(new URL('./Scene.tsx', import.meta.url), 'utf8')
+    const catalog = scene.slice(scene.indexOf('function StarCatalog'), scene.indexOf('function CameraDirector'))
+    expect(catalog).toContain('starAppearance(source[index * 5 + 4], quality)')
+    expect(catalog).toContain("setAttribute('starSize'")
+    expect(catalog).toContain("setAttribute('starOpacity'")
+    expect(catalog).toContain('gl_PointCoord')
+    expect(catalog).toContain('smoothstep')
+    expect(catalog).not.toContain('<pointsMaterial')
+  })
 })
