@@ -4,7 +4,8 @@ import { useFrame, useThree } from '@react-three/fiber'
 import { IfInSessionMode, XRSpace } from '@react-three/xr'
 import type { OrbitControls as OrbitControlsImpl } from 'three-stdlib'
 import * as THREE from 'three'
-import { getEarthFixedSunDirection, getMoonOrbitPath, getPlanetOrbitPath, getSolarSystemSnapshot, type CelestialBodyId, type CelestialBodyState } from './astro'
+import { getMoonOrbitPath, getPlanetOrbitPath, getSolarSystemSnapshot, type CelestialBodyId, type CelestialBodyState } from './astro'
+import { EARTH_AXIAL_TILT_RAD, earthRotationAngleRad, getEarthInertialSunDirection } from './earthOrientation'
 import { buildGibsWmsUrl, chooseEarthImagery, disposeReplacedTextures, estimateImageCoverage, getEarthResolutionFallbacks, getImageryBlendFrames, selectEarthResolution, type EarthImageryRequest, type EarthResolution } from './earthImagery'
 import { adaptiveFlightSpeed, compressedRenderDistance, nearestBody, selectSpaceBand, type AuVector, type NavigationState, type SpaceBand } from './navigation'
 import { getKeplerOrbitPath, type KeplerOrbit } from './orbits'
@@ -353,14 +354,38 @@ function EarthSurface({ baseMap, dayMaps, dayMix, nightMap, oceanMask, radius, s
   </mesh>
 }
 
-function EarthGlobe({ baseMap, dayMaps, dayMix, quality, radius, sunDirection }: { baseMap: THREE.Texture; dayMaps: [THREE.Texture, THREE.Texture]; dayMix: number; quality: Quality; radius: number; sunDirection: THREE.Vector3 }) {
+function EarthGlobe({ baseMap, dayMaps, dayMix, paused, quality, radius, rate, sunDirection, utcMs }: { baseMap: THREE.Texture; dayMaps: [THREE.Texture, THREE.Texture]; dayMix: number; paused: boolean; quality: Quality; radius: number; rate: number; sunDirection: THREE.Vector3; utcMs: number }) {
   const night = useTexture(NIGHT_MAP, quality)
   const ocean = useTexture(OCEAN_MASK, quality, THREE.NoColorSpace)
   const segments = quality === 'desktop' ? 128 : 72
+  const spin = useRef<THREE.Group>(null)
+  const anchor = useRef({ utcMs, realMs: performance.now(), rate, paused })
+  anchor.current = { utcMs, realMs: performance.now(), rate, paused }
+  useFrame(() => {
+    if (!spin.current) return
+    const frameUtcMs = frameSimulationUtcMs(anchor.current.utcMs, anchor.current.realMs, performance.now(), anchor.current.rate, anchor.current.paused)
+    spin.current.rotation.y = earthRotationAngleRad(frameUtcMs)
+  })
   return <group>
-    <EarthSurface baseMap={baseMap} dayMaps={dayMaps} dayMix={dayMix} nightMap={night} oceanMask={ocean} radius={radius} segments={segments} sunDirection={sunDirection} />
+    <group rotation={[EARTH_AXIAL_TILT_RAD, 0, 0]}>
+      <group ref={spin} rotation={[0, earthRotationAngleRad(utcMs), 0]}>
+        <EarthSurface baseMap={baseMap} dayMaps={dayMaps} dayMix={dayMix} nightMap={night} oceanMask={ocean} radius={radius} segments={segments} sunDirection={sunDirection} />
+      </group>
+    </group>
     <Atmosphere radius={radius} segments={segments} quality={quality} sunDirection={sunDirection} />
   </group>
+}
+
+function AstronomicalLighting({ paused, rate, sunDirection, utcMs }: { paused: boolean; rate: number; sunDirection: THREE.Vector3; utcMs: number }) {
+  const light = useRef<THREE.DirectionalLight>(null)
+  const anchor = useRef({ utcMs, realMs: performance.now(), rate, paused })
+  anchor.current = { utcMs, realMs: performance.now(), rate, paused }
+  useFrame(() => {
+    const frameUtcMs = frameSimulationUtcMs(anchor.current.utcMs, anchor.current.realMs, performance.now(), anchor.current.rate, anchor.current.paused)
+    sunDirection.set(...getEarthInertialSunDirection(frameUtcMs))
+    light.current?.position.copy(sunDirection).multiplyScalar(80)
+  })
+  return <directionalLight ref={light} position={sunDirection.clone().multiplyScalar(80)} intensity={3.2} color="#fff7df" />
 }
 
 function StarCatalog({ onReady, quality }: { onReady: () => void; quality: Quality }) {
@@ -413,6 +438,7 @@ function CameraDirector({ preset, controls, motion }: { preset: CameraPresetId; 
 
 function OrbitEarth({ annotations, dayMap, paused, preset, quality, rate, selectedObjectId, showSmallBodies, sunDirection, utcMs, onSelect }: { annotations: boolean; dayMap: EarthObservationTextures; paused: boolean; preset: CameraPresetId; quality: Quality; rate: number; selectedObjectId?: string; showSmallBodies: boolean; sunDirection: THREE.Vector3; utcMs: number; onSelect: (id: string) => void }) {
   const controls = useRef<OrbitControlsImpl | null>(null)
+  const sunMarker = useRef<THREE.Group>(null)
   const motion = useRef<Motion>({ active: false, target: new THREE.Vector3(...CAMERA_PRESETS[0].position), duration: 1.5 })
   const [solarContextVisible, setSolarContextVisible] = useState(false)
   const solarContextVisibleRef = useRef(false)
@@ -433,8 +459,8 @@ function OrbitEarth({ annotations, dayMap, paused, preset, quality, rate, select
     const moon = snapshot.find((body) => body.id === 'moon')!
     return new THREE.Vector3(moon.positionAu[0] - earth.positionAu[0], moon.positionAu[2] - earth.positionAu[2], earth.positionAu[1] - moon.positionAu[1]).multiplyScalar(moonScale)
   }, [snapshot, moonScale])
-  const sunMarkerPosition = useMemo(() => sunDirection.clone().multiplyScalar(42), [sunDirection])
   useFrame(({ camera }) => {
+    sunMarker.current?.position.copy(sunDirection).multiplyScalar(42)
     const visible = camera.position.length() >= 14
     if (visible !== solarContextVisibleRef.current) {
       solarContextVisibleRef.current = visible
@@ -442,11 +468,11 @@ function OrbitEarth({ annotations, dayMap, paused, preset, quality, rate, select
     }
   })
   return <>
-    <EarthGlobe baseMap={dayMap.base} dayMaps={[dayMap.primary, dayMap.secondary]} dayMix={dayMap.mix} quality={quality} radius={2.25} sunDirection={sunDirection} />
+    <EarthGlobe baseMap={dayMap.base} dayMaps={[dayMap.primary, dayMap.secondary]} dayMix={dayMap.mix} paused={paused} quality={quality} radius={2.25} rate={rate} sunDirection={sunDirection} utcMs={utcMs} />
     <lineLoop geometry={moonOrbitGeometry}><lineBasicMaterial color="#8eb6d2" transparent opacity={0.3} /></lineLoop>
     <mesh position={moonPosition}><sphereGeometry args={[0.58, quality === 'desktop' ? 64 : 36, quality === 'desktop' ? 64 : 36]} /><meshStandardMaterial map={moonMap} roughness={1} /></mesh>
-    <group position={sunMarkerPosition} scale={1.25}><SunVisual detailed={false} quality={quality} /></group>
-    {annotations && <><Text position={[0, 2.75, 0]} fontSize={0.18} color="#d9efff">NASA 近实时真彩地球</Text><Text position={[moonPosition.x, moonPosition.y + 0.9, moonPosition.z]} fontSize={0.16} color="#d9efff">月球 · 真实轨道方向</Text><Text position={[sunMarkerPosition.x, sunMarkerPosition.y + 1.8, sunMarkerPosition.z]} fontSize={0.18} color="#ffdca0">太阳方向示意</Text></>}
+    <group ref={sunMarker} position={sunDirection.clone().multiplyScalar(42)} scale={1.25}><SunVisual detailed={false} quality={quality} />{annotations && <Text position={[0, 1.44, 0]} fontSize={0.144} color="#ffdca0">太阳方向示意</Text>}</group>
+    {annotations && <><Text position={[0, 2.75, 0]} fontSize={0.18} color="#d9efff">NASA 近实时真彩地球</Text><Text position={[moonPosition.x, moonPosition.y + 0.9, moonPosition.z]} fontSize={0.16} color="#d9efff">月球 · 真实轨道方向</Text></>}
     {showSmallBodies && solarContextVisible ? <SmallBodies band="solar" observer={solarObserver} paused={paused} quality={quality} rate={rate} selectedObjectId={selectedObjectId} utcMs={utcMs} onSelect={onSelect} /> : null}
     <CameraDirector preset={preset} controls={controls} motion={motion} />
     <IfInSessionMode deny="immersive-vr">
@@ -540,8 +566,8 @@ function TexturedPlanet({ body, quality, sunDirection, utcMs }: { body: Celestia
   </group>
 }
 
-function DetailedPlanet({ body, dayMap, quality, sunDirection, utcMs }: { body: CelestialBodyState; dayMap: EarthObservationTextures; quality: Quality; sunDirection: THREE.Vector3; utcMs: number }) {
-  if (body.id === 'earth') return <EarthGlobe baseMap={dayMap.base} dayMaps={[dayMap.primary, dayMap.secondary]} dayMix={dayMap.mix} quality={quality} radius={1} sunDirection={sunDirection} />
+function DetailedPlanet({ body, dayMap, paused, quality, rate, sunDirection, utcMs }: { body: CelestialBodyState; dayMap: EarthObservationTextures; paused: boolean; quality: Quality; rate: number; sunDirection: THREE.Vector3; utcMs: number }) {
+  if (body.id === 'earth') return <EarthGlobe baseMap={dayMap.base} dayMaps={[dayMap.primary, dayMap.secondary]} dayMix={dayMap.mix} paused={paused} quality={quality} radius={1} rate={rate} sunDirection={sunDirection} utcMs={utcMs} />
   if (body.id === 'sun') return <SunVisual detailed quality={quality} />
   return <TexturedPlanet body={body} quality={quality} sunDirection={sunDirection} utcMs={utcMs} />
 }
@@ -590,7 +616,7 @@ function FloatingOrbit({ id, observer, band, quality, utcMs }: { id: Exclude<Cel
   return <lineLoop geometry={geometry}><lineBasicMaterial color={id === 'earth' ? '#3c7196' : '#28445f'} transparent opacity={id === 'earth' ? 0.5 : 0.28} /></lineLoop>
 }
 
-function FloatingBody({ body, dayMap, observer, band, nearestId, quality, selected, forceLabel = false, sunDirection, utcMs, onSelect }: { body: CelestialBodyState; dayMap: EarthObservationTextures; observer: React.MutableRefObject<AuVector>; band: SpaceBand; nearestId: string; quality: Quality; selected: boolean; forceLabel?: boolean; sunDirection: THREE.Vector3; utcMs: number; onSelect: (id: string) => void }) {
+function FloatingBody({ body, dayMap, observer, band, nearestId, paused, quality, rate, selected, forceLabel = false, sunDirection, utcMs, onSelect }: { body: CelestialBodyState; dayMap: EarthObservationTextures; observer: React.MutableRefObject<AuVector>; band: SpaceBand; nearestId: string; paused: boolean; quality: Quality; rate: number; selected: boolean; forceLabel?: boolean; sunDirection: THREE.Vector3; utcMs: number; onSelect: (id: string) => void }) {
   const group = useRef<THREE.Group>(null)
   const visualGroup = useRef<THREE.Group>(null)
   const labelGroup = useRef<THREE.Group>(null)
@@ -613,7 +639,7 @@ function FloatingBody({ body, dayMap, observer, band, nearestId, quality, select
   return <group ref={group} onClick={(event) => { event.stopPropagation(); onSelect(body.id) }}>
     {body.id === 'sun' && <pointLight intensity={quality === 'desktop' ? 5.2 : 3.8} distance={240} decay={0.45} color="#fff0c2" />}
     <group ref={visualGroup}>
-      {detailed ? <DetailedPlanet body={body} dayMap={dayMap} quality={quality} sunDirection={localSunDirection} utcMs={utcMs} /> : body.id === 'sun' ? <SunVisual detailed={false} quality={quality} /> : <mesh><sphereGeometry args={[1, 24, 18]} /><meshStandardMaterial color={body.color} roughness={0.9} /></mesh>}
+      {detailed ? <DetailedPlanet body={body} dayMap={dayMap} paused={paused} quality={quality} rate={rate} sunDirection={localSunDirection} utcMs={utcMs} /> : body.id === 'sun' ? <SunVisual detailed={false} quality={quality} /> : <mesh><sphereGeometry args={[1, 24, 18]} /><meshStandardMaterial color={body.color} roughness={0.9} /></mesh>}
       {selected && band === 'solar' && <mesh rotation={[Math.PI / 2, 0, 0]}><ringGeometry args={[1.35, 1.48, 48]} /><meshBasicMaterial color="#9bdcff" transparent opacity={0.9} side={THREE.DoubleSide} /></mesh>}
     </group>
     {forceLabel && <mesh><sphereGeometry args={[0.32, 12, 8]} /><meshBasicMaterial transparent opacity={0} depthWrite={false} /></mesh>}
@@ -812,7 +838,7 @@ function FlightWorld({ dayMap, navigation, paused, quality, rate, selectedObject
   const closest = nearestBody(navigation.observerHelioAu, snapshot)
   return <>
     {navigation.band !== 'surface' && ORBIT_IDS.map((id) => <FloatingOrbit key={id} id={id} observer={observer} band={navigation.band} quality={quality} utcMs={utcMs} />)}
-    {snapshot.map((body) => <FloatingBody key={body.id} body={body} dayMap={dayMap} observer={observer} band={navigation.band} nearestId={closest.id} quality={quality} selected={body.id === selectedObjectId} sunDirection={sunDirection} utcMs={utcMs} onSelect={onSelect} />)}
+    {snapshot.map((body) => <FloatingBody key={body.id} body={body} dayMap={dayMap} observer={observer} band={navigation.band} nearestId={closest.id} paused={paused} quality={quality} rate={rate} selected={body.id === selectedObjectId} sunDirection={sunDirection} utcMs={utcMs} onSelect={onSelect} />)}
     {showSmallBodies && <SmallBodies band={navigation.band} observer={observer} paused={paused} quality={quality} rate={rate} selectedObjectId={selectedObjectId} utcMs={utcMs} onSelect={onSelect} />}
   </>
 }
@@ -827,13 +853,13 @@ export function VRPresetMenu({ onPresetChange }: { onPresetChange: (preset: Came
 export function Scene({ annotations, navigation, paused, preset, quality, rate, selectedObjectId, imageryRequest, showSmallBodies, frameP95Ms, utcMs, onNavigationChange, onObservationStatus, onSelect, onSkyReady }: Props) {
   const closeView = navigation.controlMode === 'flight' ? navigation.band === 'surface' : preset === 'atmosphere' || preset === 'clouds' || preset === 'china'
   const dayMap = useEarthObservationTexture(imageryRequest, quality, closeView, frameP95Ms, onObservationStatus)
-  const sunDirection = useMemo(() => new THREE.Vector3(...getEarthFixedSunDirection(utcMs)), [utcMs])
+  const sunDirection = useMemo(() => new THREE.Vector3(...getEarthInertialSunDirection(utcMs)), [])
   useEffect(() => { document.title = '地球与太阳系观察 / Live Earth & Solar System' }, [])
   return <>
     <color attach="background" args={['#010207']} />
     <mesh><sphereGeometry args={[320, 32, 16]} /><meshBasicMaterial color="#010207" side={THREE.BackSide} /></mesh>
     <ambientLight intensity={0.08} color="#b8cae0" />
-    <directionalLight position={sunDirection.clone().multiplyScalar(80)} intensity={3.2} color="#fff7df" />
+    <AstronomicalLighting paused={paused} rate={rate} sunDirection={sunDirection} utcMs={utcMs} />
     <StarCatalog onReady={onSkyReady} quality={quality} />
     {navigation.controlMode === 'orbit'
       ? <OrbitEarth annotations={annotations} dayMap={dayMap} paused={paused} preset={preset} quality={quality} rate={rate} selectedObjectId={selectedObjectId} showSmallBodies={showSmallBodies} sunDirection={sunDirection} utcMs={utcMs} onSelect={onSelect} />

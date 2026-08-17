@@ -112,6 +112,20 @@ describe('unified earth and solar-system application boundary', () => {
     expect(scene).not.toContain('<meshBasicMaterial color={color} transparent opacity={0.11}')
   })
 
+  it('rotates the Earth body continuously in an inertial frame', () => {
+    const scene = readFileSync(new URL('./Scene.tsx', import.meta.url), 'utf8')
+    const globe = scene.slice(scene.indexOf('function EarthGlobe'), scene.indexOf('function StarCatalog'))
+    expect(scene).toContain('function AstronomicalLighting')
+    expect(scene).toContain('getEarthInertialSunDirection')
+    expect(scene).not.toContain('getEarthFixedSunDirection')
+    expect(globe).toContain('paused: boolean')
+    expect(globe).toContain('rate: number')
+    expect(globe).toContain('utcMs: number')
+    expect(globe).toContain('frameSimulationUtcMs')
+    expect(globe).toContain('earthRotationAngleRad(frameUtcMs)')
+    expect(globe).toContain('rotation={[EARTH_AXIAL_TILT_RAD, 0, 0]}')
+  })
+
   it('uses a depth-tested 3D volumetric shell instead of a camera-facing ring', () => {
     const scene = readFileSync(new URL('./Scene.tsx', import.meta.url), 'utf8')
     const atmosphere = scene.slice(scene.indexOf('function Atmosphere'), scene.indexOf('function EarthSurface'))
