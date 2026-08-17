@@ -843,11 +843,14 @@ function FlightWorld({ dayMap, navigation, paused, quality, rate, selectedObject
   </>
 }
 
-export function VRPresetMenu({ onPresetChange }: { onPresetChange: (preset: CameraPresetId) => void }) {
+export function VRPresetMenu({ controlMode, onControlModeChange, onPresetChange }: { controlMode: NavigationState['controlMode']; onControlModeChange: (mode: NavigationState['controlMode']) => void; onPresetChange: (preset: CameraPresetId) => void }) {
   return <IfInSessionMode allow="immersive-vr"><XRSpace space="viewer"><group position={[0, -0.45, -1.4]}>{CAMERA_PRESETS.map((preset, index) => <group key={preset.id} position={[(index - 2) * 1.05, 0, -Math.abs(index - 2) * 0.2]} onClick={(event) => { event.stopPropagation(); onPresetChange(preset.id) }}>
     <mesh><planeGeometry args={[0.92, 0.34]} /><meshBasicMaterial color="#0a1b2d" transparent opacity={0.9} /></mesh>
     <Text fontSize={0.095} color="#dbeeff" anchorX="center" anchorY="middle" position={[0, 0, 0.01]}>{preset.label}</Text>
-  </group>)}</group></XRSpace></IfInSessionMode>
+  </group>)}<group position={[0, -0.52, 0]} onClick={(event) => { event.stopPropagation(); onControlModeChange(controlMode === 'flight' ? 'orbit' : 'flight') }}>
+    <mesh><planeGeometry args={[1.45, 0.36]} /><meshBasicMaterial color={controlMode === 'flight' ? '#235b78' : '#0a1b2d'} transparent opacity={0.94} /></mesh>
+    <Text fontSize={0.105} color="#ffffff" anchorX="center" anchorY="middle" position={[0, 0, 0.01]}>{controlMode === 'flight' ? '退出自由飞行' : '自由飞行'}</Text>
+  </group></group></XRSpace></IfInSessionMode>
 }
 
 export function Scene({ annotations, navigation, paused, preset, quality, rate, selectedObjectId, imageryRequest, showSmallBodies, frameP95Ms, utcMs, onNavigationChange, onObservationStatus, onSelect, onSkyReady }: Props) {

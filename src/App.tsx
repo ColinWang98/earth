@@ -108,7 +108,7 @@ export function App() {
       <PerformanceMonitor flipflops={3} onDecline={() => setDprCap((current) => Math.max(quality === 'mobile' ? 0.9 : 1, current - 0.15))} onIncline={() => setDprCap((current) => Math.min(quality === 'mobile' ? 1.15 : 1.65, current + 0.08))}>
         <FrameProbe onSample={setFrameP95} />
         <XR store={xrStore}><Suspense fallback={null}>
-          <XROrigin position={[0, -1.6, 8]}><VRPresetMenu onPresetChange={setPreset} /></XROrigin>
+          <XROrigin position={[0, -1.6, 8]}><VRPresetMenu controlMode={navigation.controlMode} onControlModeChange={setControlMode} onPresetChange={setPreset} /></XROrigin>
           <Scene
             annotations={annotations}
             navigation={navigation}

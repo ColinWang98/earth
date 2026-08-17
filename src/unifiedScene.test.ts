@@ -167,6 +167,21 @@ describe('unified earth and solar-system application boundary', () => {
     expect(app).toContain('<XROrigin position={[0, -1.6, 8]}><VRPresetMenu')
   })
 
+  it('lets Quest users enter the scene that consumes controller input', () => {
+    const app = readFileSync(new URL('./App.tsx', import.meta.url), 'utf8')
+    const scene = readFileSync(new URL('./Scene.tsx', import.meta.url), 'utf8')
+    const vrMenu = scene.slice(scene.indexOf('export function VRPresetMenu'), scene.indexOf('export function Scene'))
+    const flightWorld = scene.slice(scene.indexOf('function FlightWorld'), scene.indexOf('export function VRPresetMenu'))
+    expect(app).toContain('controlMode={navigation.controlMode}')
+    expect(app).toContain('onControlModeChange={setControlMode}')
+    expect(vrMenu).toContain('onControlModeChange')
+    expect(vrMenu).toContain('自由飞行')
+    expect(vrMenu).toContain('退出自由飞行')
+    expect(flightWorld).toContain('session.inputSources')
+    expect(flightWorld).toContain("source.handedness === 'left'")
+    expect(flightWorld).toContain("source.handedness === 'right'")
+  })
+
   it('renders an opaque space shell behind the stars', () => {
     const scene = readFileSync(new URL('./Scene.tsx', import.meta.url), 'utf8')
     expect(scene).toContain('<sphereGeometry args={[320, 32, 16]} />')
